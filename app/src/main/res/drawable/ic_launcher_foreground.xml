@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 简单的月亮图标前景 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M64.5,36C58,41.5 53,49 53,57.5C53,67 60.5,74.5 70,74.5C74.5,74.5 78.5,73 82,70.5C76.5,78.5 67.5,84 57.5,84C42.5,84 31,72.5 31,57.5C31,43.5 41,32.5 54.5,30.5C56,34 60.5,34.5 64.5,36Z" />
+</vector>
