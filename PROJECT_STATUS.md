@@ -29,16 +29,24 @@
   - 新增 `SettingsRepository`（Preferences DataStore）：用户配置/内部状态分层，`originalTimezoneId` 写保护
   - 新增纯函数 `buildShiftTimeZoneId(originalOffsetMillis, offsetMin)` → 动态 `GMT±HH:MM`
   - 依赖：`androidx.datastore:datastore-preferences:1.1.1`
+- [x] **阶段 2：Compose UI**（`assembleDebug` ✅）
+  - 底部导航三页：今日 / 配置 / 模式（状态式导航，未引入 navigation-compose）
+  - 自研 `TimeWheelPicker`：双列轮盘（小时 0-23 + 分钟 0/15/30/45），滚动居中吸附
+  - `OffsetSlider`（0-180min、15 步进）+ `LivePreview`（真实时间/偏移/显示时间，每秒刷新）
+  - 配置页「今晚效果」卡片（开始/恢复 真实时刻 → 显示时刻）
+  - 模式页：三模式卡片 + 参数滑条（渐进步进 / 波动范围）+ 渐进序列预览（复用策略引擎）
+  - UI 由 `SettingsViewModel`（内存 `mutableStateOf`）驱动，与 `SleepShiftSettings` 完全兼容（阶段 3 接 DataStore）
+  - 依赖：`androidx.lifecycle:lifecycle-viewmodel-compose:2.9.1`
 
 ## 当前开发阶段
 
-**阶段 2：Compose UI**（下一步）
+**阶段 3：配置保存**（下一步）
 
-- 底部导航三页：今日 / 配置 / 模式
-- `TimeWheelPicker`（自研双列轮盘，小时+分钟，分钟级连续选择）
-- `OffsetSlider`（0-180min，15 步进）+ `LivePreview`（真实时间 → 偏移后显示，实时更新）
-- 先用内存假数据，不接 DataStore（阶段 3 接线）
-- 依赖：`androidx.navigation:navigation-compose`、`androidx.lifecycle:lifecycle-viewmodel-compose`
+- UI → ViewModel → SettingsRepository(DataStore) 全链路
+- `SettingsViewModel` 改为 DataStore 驱动（`collectAsState`），方法签名不变
+- `enabled` 总开关持久化；重启模拟器后配置保持
+- `SettingsRepository` 单例注入（Application 层或 ViewModelFactory）
+- 验证：改配置 → 杀进程/重启 → 值保持
 
 ## 遇到的问题
 
@@ -56,7 +64,17 @@
 |---|---|
 | `app/src/main/AndroidManifest.xml` | 声明 `DeviceAdminReceiver` + `RECEIVE_BOOT_COMPLETED` + 入口 Activity（阶段 5 将注册 AlarmReceiver/BootReceiver） |
 | `app/src/main/java/com/sleepshift/admin/DeviceAdminReceiver.kt` | Device Owner 接收器（阶段 4/6 加 onEnabled/onDisabled 回调） |
-| `app/src/main/java/com/sleepshift/MainActivity.kt` | Compose 主界面（占位 UI，阶段 2 重构为导航宿主） |
+| `app/src/main/java/com/sleepshift/MainActivity.kt` | 入口 Activity，挂载 SleepShiftApp |
+| `app/src/main/java/com/sleepshift/ui/SleepShiftApp.kt` | 底部导航壳（三页状态式切换） |
+| `app/src/main/java/com/sleepshift/ui/SettingsViewModel.kt` | 设置 ViewModel（阶段 2 内存态，阶段 3 接 DataStore） |
+| `app/src/main/java/com/sleepshift/ui/NightPlan.kt` | 今晚窗口展示推算（真实→显示时刻） |
+| `app/src/main/java/com/sleepshift/ui/home/HomeScreen.kt` | 首页：状态/预览/下次切换/总开关 |
+| `app/src/main/java/com/sleepshift/ui/config/ConfigScreen.kt` | 配置页：实时预览 + 轮盘 + 滑动条 |
+| `app/src/main/java/com/sleepshift/ui/mode/ModeScreen.kt` | 模式页：三模式 + 参数 |
+| `app/src/main/java/com/sleepshift/ui/components/TimeWheelPicker.kt` | 自研双列轮盘选择器 |
+| `app/src/main/java/com/sleepshift/ui/components/OffsetSlider.kt` | 偏移滑动条（0-180、15 步进） |
+| `app/src/main/java/com/sleepshift/ui/components/LivePreview.kt` | 实时效果预览 |
+| `app/src/main/java/com/sleepshift/ui/components/CurrentTime.kt` | 每秒刷新时钟 |
 | `app/src/main/java/com/sleepshift/model/SleepShiftModels.kt` | **v2 数据模型**：SleepShiftSettings / SchedulerState / NightWindow / 默认值 / 校验 / `buildShiftTimeZoneId` |
 | `app/src/main/java/com/sleepshift/strategy/OffsetStrategy.kt` | **偏移策略引擎**：FIXED / GRADUAL / FLUCTUATION |
 | `app/src/main/java/com/sleepshift/data/SettingsRepository.kt` | **Preferences DataStore 仓库**（分层存储 + 原始时区写保护） |
@@ -72,8 +90,8 @@
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | 1 | 数据模型（Settings + DataStore + 策略引擎） | ✅ 完成 |
-| 2 | **Compose UI**（导航 + Wheel Picker + 滑动条 + 实时预览，内存假数据） | ⏳ 当前 |
-| 3 | 配置保存（UI → ViewModel → Repository → DataStore 全链路） | 待做 |
+| 2 | Compose UI（导航 + Wheel Picker + 滑动条 + 实时预览，内存假数据） | ✅ 完成 |
+| 3 | **配置保存**（UI → ViewModel → Repository → DataStore 全链路） | ⏳ 当前 |
 | 4 | Scheduler 重构（原始时区保存、epoch 计算、动态 GMT±HH:MM、武装/取消、策略状态推进 + 防重复武装标记） | 待做 |
 | 5 | Receiver 适配（AlarmReceiver extra 传参 + 重新武装；BootReceiver 重启重注册；DeviceAdminReceiver 接 Scheduler） | 待做 |
 | 6 | DPM 接入（`setTimeZone` 动态 ID + 防御校验；**Debug 测试入口：立即偏移/立即恢复**，UI 按钮 + adb 广播） | 待做 |
