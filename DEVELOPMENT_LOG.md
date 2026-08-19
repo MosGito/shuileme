@@ -124,3 +124,14 @@
   - `am broadcast -n com.sleepshift/.AlarmReceiver -a com.sleepshift.action.TEST_CANCEL`
   - `am broadcast -n com.sleepshift/.AlarmReceiver -a com.sleepshift.action.TEST_SET_ZONE --es zone_id "Asia/Shanghai"`
 - **待产品决策**：分数偏移（15 分钟步进）本平台无法经 setTimeZone 生效，需在"约束为整小时"与"保留分数偏移（部分设备可用）"间抉择。
+
+### 11. 阶段 4-C：偏移粒度约束为整小时（产品决策落地）
+
+- **日期**：2026-08-19
+- **决策**：受平台约束（见 #10），偏移粒度改为**整小时**（0/60/120/180）。
+- **改动**：
+  - `OFFSET_STEP_MIN=60`；渐进步进 60/120（`MIN/MAX_GRADUAL_STEP_MIN`）；波动范围 0/60（`MIN/MAX_FLUCTUATION_RANGE_MIN`）；波动每日变化限幅 `maxDailyDeltaMin=60`。
+  - `settingsVersion` **v1→v2**：`migrate()` 将旧 15 分钟步进值（offsetMin/gradualStepMin/fluctuationRangeMin）归一化为整小时；`toSettings()` 读取时防御性归一化（避免迁移前读到非法粒度）。
+  - UI：偏移滑条 steps=2（0/60/120/180）、渐进步进 0/120、波动范围 0/60。
+- **验证**：单测 7/7；模拟器滑条中点点击吸附到 +120（整小时）✅；`assembleDebug` ✅。
+- **说明**：`buildShiftZoneId` 的 `GMT±HH:MM` 分数回退路径保留（防御，正常产品流程不再产生分数偏移）。

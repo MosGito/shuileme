@@ -14,16 +14,26 @@ import com.sleepshift.model.DEFAULT_GRADUAL_STEP_MIN
 import com.sleepshift.model.DEFAULT_OFFSET_MIN
 import com.sleepshift.model.DEFAULT_RESTORE_TIME_MIN
 import com.sleepshift.model.DEFAULT_START_TIME_MIN
+import com.sleepshift.model.MAX_FLUCTUATION_RANGE_MIN
+import com.sleepshift.model.MAX_GRADUAL_STEP_MIN
+import com.sleepshift.model.MAX_OFFSET_MIN
+import com.sleepshift.model.MIN_FLUCTUATION_RANGE_MIN
+import com.sleepshift.model.MIN_GRADUAL_STEP_MIN
+import com.sleepshift.model.MIN_OFFSET_MIN
 import com.sleepshift.model.SchedulerState
 import com.sleepshift.model.SleepShiftMode
 import com.sleepshift.model.SleepShiftSettings
+import com.sleepshift.model.roundToStepMin
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "sleepshift_settings")
 
-/** 当前配置结构版本；未来升级结构时递增，并在 migrate() 中补充逐版本迁移逻辑 */
-private const val CURRENT_SETTINGS_VERSION = 1
+/**
+ * 当前配置结构版本。
+ * v2：偏移粒度改为整小时（60 分钟步进），旧 15 分钟值在 migrate 中归一化。
+ */
+private const val CURRENT_SETTINGS_VERSION = 2
 
 /**
  * SleepShift 配置仓库（Preferences DataStore）——数据访问唯一入口。
@@ -107,7 +117,16 @@ class SettingsRepository(context: Context) {
         var version = this[Keys.SETTINGS_VERSION] ?: 0
         while (version < CURRENT_SETTINGS_VERSION) {
             when (version) {
-                // v0 -> v1：初始结构，无需迁移
+                1 -> {
+                    // v1 -> v2：偏移/步进/波动范围改为整小时粒度
+                    this[Keys.OFFSET_MIN] = roundToStepMin(this[Keys.OFFSET_MIN] ?: DEFAULT_OFFSET_MIN, 60)
+                        .coerceIn(MIN_OFFSET_MIN, MAX_OFFSET_MIN)
+                    this[Keys.GRADUAL_STEP_MIN] = roundToStepMin(this[Keys.GRADUAL_STEP_MIN] ?: DEFAULT_GRADUAL_STEP_MIN, 60)
+                        .coerceIn(MIN_GRADUAL_STEP_MIN, MAX_GRADUAL_STEP_MIN)
+                    this[Keys.FLUCTUATION_RANGE_MIN] =
+                        roundToStepMin(this[Keys.FLUCTUATION_RANGE_MIN] ?: DEFAULT_FLUCTUATION_RANGE_MIN, 60)
+                            .coerceIn(MIN_FLUCTUATION_RANGE_MIN, MAX_FLUCTUATION_RANGE_MIN)
+                }
             }
             version++
         }
@@ -118,10 +137,14 @@ class SettingsRepository(context: Context) {
         enabled = this[Keys.ENABLED] ?: false,
         startTimeMin = this[Keys.START_TIME_MIN] ?: DEFAULT_START_TIME_MIN,
         restoreTimeMin = this[Keys.RESTORE_TIME_MIN] ?: DEFAULT_RESTORE_TIME_MIN,
-        offsetMin = this[Keys.OFFSET_MIN] ?: DEFAULT_OFFSET_MIN,
+        // 读取时防御性归一化到整小时粒度（v2 迁移前旧值也保证合法）
+        offsetMin = roundToStepMin(this[Keys.OFFSET_MIN] ?: DEFAULT_OFFSET_MIN, 60)
+            .coerceIn(MIN_OFFSET_MIN, MAX_OFFSET_MIN),
         mode = SleepShiftMode.entries.getOrElse(this[Keys.MODE] ?: SleepShiftMode.FIXED.ordinal) { SleepShiftMode.FIXED },
-        gradualStepMin = this[Keys.GRADUAL_STEP_MIN] ?: DEFAULT_GRADUAL_STEP_MIN,
-        fluctuationRangeMin = this[Keys.FLUCTUATION_RANGE_MIN] ?: DEFAULT_FLUCTUATION_RANGE_MIN,
+        gradualStepMin = roundToStepMin(this[Keys.GRADUAL_STEP_MIN] ?: DEFAULT_GRADUAL_STEP_MIN, 60)
+            .coerceIn(MIN_GRADUAL_STEP_MIN, MAX_GRADUAL_STEP_MIN),
+        fluctuationRangeMin = roundToStepMin(this[Keys.FLUCTUATION_RANGE_MIN] ?: DEFAULT_FLUCTUATION_RANGE_MIN, 60)
+            .coerceIn(MIN_FLUCTUATION_RANGE_MIN, MAX_FLUCTUATION_RANGE_MIN),
     )
 
     private fun Preferences.toSchedulerState() = SchedulerState(

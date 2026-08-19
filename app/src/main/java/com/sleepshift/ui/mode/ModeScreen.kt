@@ -22,6 +22,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.sleepshift.model.MAX_FLUCTUATION_RANGE_MIN
+import com.sleepshift.model.MAX_GRADUAL_STEP_MIN
+import com.sleepshift.model.MIN_FLUCTUATION_RANGE_MIN
+import com.sleepshift.model.MIN_GRADUAL_STEP_MIN
 import com.sleepshift.model.SchedulerState
 import com.sleepshift.model.SleepShiftMode
 import com.sleepshift.model.SleepShiftSettings
@@ -121,11 +125,12 @@ private fun GradualContent(settings: SleepShiftSettings, onStepChange: (Int) -> 
     Slider(
         value = settings.gradualStepMin.toFloat(),
         onValueChange = { raw ->
-            val snapped = (((raw / 15).roundToInt() * 15)).coerceIn(15, 60)
+            val snapped = ((raw / 60).roundToInt() * 60)
+                .coerceIn(MIN_GRADUAL_STEP_MIN, MAX_GRADUAL_STEP_MIN)
             onStepChange(snapped)
         },
-        valueRange = 15f..60f,
-        steps = 2, // 15/30/45/60
+        valueRange = MIN_GRADUAL_STEP_MIN.toFloat()..MAX_GRADUAL_STEP_MIN.toFloat(),
+        steps = 0, // 60 / 120（整小时）
     )
     Text(
         text = gradualPreviewText(settings),
@@ -141,14 +146,15 @@ private fun FluctuationContent(settings: SleepShiftSettings, onRangeChange: (Int
     Slider(
         value = settings.fluctuationRangeMin.toFloat(),
         onValueChange = { raw ->
-            val snapped = ((raw / 15).roundToInt() * 15).coerceIn(15, 60)
+            val snapped = ((raw / 60).roundToInt() * 60)
+                .coerceIn(MIN_FLUCTUATION_RANGE_MIN, MAX_FLUCTUATION_RANGE_MIN)
             onRangeChange(snapped)
         },
-        valueRange = 15f..60f,
-        steps = 2, // 15/30/45/60
+        valueRange = MIN_FLUCTUATION_RANGE_MIN.toFloat()..MAX_FLUCTUATION_RANGE_MIN.toFloat(),
+        steps = 0, // 0 / 60（整小时）
     )
     Text(
-        text = "每晚实际偏移 = 目标 ± 范围（三角分布），且相邻两晚变化不超过 30 分钟。",
+        text = "每晚实际偏移 = 目标 ± 范围（三角分布），且相邻两晚变化不超过 60 分钟。",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )

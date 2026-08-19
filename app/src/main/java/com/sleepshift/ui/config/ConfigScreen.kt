@@ -58,7 +58,7 @@ fun ConfigScreen(viewModel: SettingsViewModel) {
             )
         }
 
-        SectionCard(title = "偏移量", hint = "显示时间比真实时间提前多少（15 分钟步进）") {
+        SectionCard(title = "偏移量", hint = "显示时间比真实时间提前多少（整小时步进）") {
             OffsetSlider(
                 offsetMin = settings.offsetMin,
                 onOffsetChange = viewModel::setOffsetMin,

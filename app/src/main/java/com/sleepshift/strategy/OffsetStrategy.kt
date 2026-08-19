@@ -33,11 +33,11 @@ object GradualStrategy : OffsetStrategy {
 
 /**
  * 自然波动模式：目标值 ± 波动范围，候选值服从三角分布（峰值在目标值附近，非完全随机），
- * 步进取整到 15 分钟后，再限制与前一晚的变化幅度，避免剧烈跳变。
+ * 步进取整到整小时（OFFSET_STEP_MIN=60）后，再限制与前一晚的变化幅度，避免剧烈跳变。
  */
 class FluctuationStrategy(
     private val random: Random = Random.Default,
-    private val maxDailyDeltaMin: Int = 30,
+    private val maxDailyDeltaMin: Int = 60,
 ) : OffsetStrategy {
     override fun next(settings: SleepShiftSettings, state: SchedulerState): StrategyResult {
         val u1 = random.nextDouble()

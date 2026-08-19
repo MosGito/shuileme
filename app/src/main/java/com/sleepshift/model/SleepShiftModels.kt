@@ -15,12 +15,12 @@ data class SleepShiftSettings(
     val startTimeMin: Int = DEFAULT_START_TIME_MIN,
     /** 恢复时间（系统显示时间达到该值时恢复，当天第几分钟，0-1439） */
     val restoreTimeMin: Int = DEFAULT_RESTORE_TIME_MIN,
-    /** 偏移量（分钟，0-180，15 的倍数；同时作为 GRADUAL/FLUCTUATION 的目标值） */
+    /** 偏移量（分钟，0-180，**整小时步进 60**；同时作为 GRADUAL/FLUCTUATION 的目标值） */
     val offsetMin: Int = DEFAULT_OFFSET_MIN,
     val mode: SleepShiftMode = SleepShiftMode.FIXED,
-    /** 渐进模式：每日步进（分钟） */
+    /** 渐进模式：每日步进（分钟，整小时） */
     val gradualStepMin: Int = DEFAULT_GRADUAL_STEP_MIN,
-    /** 自然波动模式：目标值 ± 波动范围（分钟） */
+    /** 自然波动模式：目标值 ± 波动范围（分钟，整小时） */
     val fluctuationRangeMin: Int = DEFAULT_FLUCTUATION_RANGE_MIN,
 )
 
@@ -70,7 +70,16 @@ const val MINUTES_PER_DAY = 1440
 
 const val MIN_OFFSET_MIN = 0
 const val MAX_OFFSET_MIN = 180
-const val OFFSET_STEP_MIN = 15
+/** 偏移粒度：整小时（平台约束：setTimeZone 仅应用 IANA 时区，分数分钟偏移无效） */
+const val OFFSET_STEP_MIN = 60
+
+/** 渐进每日步进区间（整小时） */
+const val MIN_GRADUAL_STEP_MIN = 60
+const val MAX_GRADUAL_STEP_MIN = 120
+
+/** 波动 ±范围区间（整小时） */
+const val MIN_FLUCTUATION_RANGE_MIN = 0
+const val MAX_FLUCTUATION_RANGE_MIN = 60
 
 /** 夜间显示时长合理区间（1h ~ 16h），超出视为配置非法 */
 const val MIN_NIGHT_LENGTH_MIN = 60
@@ -79,8 +88,11 @@ const val MAX_NIGHT_LENGTH_MIN = 16 * 60
 const val DEFAULT_START_TIME_MIN = 22 * 60 + 30   // 22:30
 const val DEFAULT_RESTORE_TIME_MIN = 6 * 60 + 30  // 06:30
 const val DEFAULT_OFFSET_MIN = 120
-const val DEFAULT_GRADUAL_STEP_MIN = 30
-const val DEFAULT_FLUCTUATION_RANGE_MIN = 30
+const val DEFAULT_GRADUAL_STEP_MIN = 60
+const val DEFAULT_FLUCTUATION_RANGE_MIN = 60
+
+/** 按步进取整（四舍五入） */
+fun roundToStepMin(value: Int, stepMin: Int): Int = ((value + stepMin / 2) / stepMin) * stepMin
 
 /** 夜间显示时长（分钟）：恢复时间与开始时间之差，跨天取模到 [0,1440) */
 fun nightLengthMin(startTimeMin: Int, restoreTimeMin: Int): Int =
@@ -102,8 +114,8 @@ fun computeNightWindow(settings: SleepShiftSettings): NightWindow? {
 }
 
 /**
- * 生成应用偏移后的系统时区 ID（如原始 UTC+8、偏移 +135min → "GMT+10:15"）。
- * 偏移为 15 的倍数，分钟位恒为 00/15/30/45，属 ICU 可解析的 GMT±HH:MM 格式。
+ * 生成自定义 GMT 偏移时区 ID（如原始 UTC+8、偏移 +135min → "GMT+10:15"）。
+ * 仅作为分数偏移的兜底格式；整小时偏移请走 IANA 路径（TimezoneScheduler.buildShiftZoneId）。
  */
 fun buildShiftTimeZoneId(originalOffsetMillis: Int, offsetMin: Int): String {
     val totalMinutes = originalOffsetMillis / 60_000 + offsetMin

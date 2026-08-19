@@ -52,9 +52,9 @@ class TimezoneSchedulerTest {
     @Test
     fun `re-arm same night picks up changed FIXED offset`() {
         val now = ZonedDateTime.of(2026, 8, 19, 12, 0, 0, 0, ZoneId.of(originalZone)).toInstant().toEpochMilli()
-        val s1 = SleepShiftSettings(enabled = true, startTimeMin = 22 * 60 + 30, restoreTimeMin = 6 * 60 + 30, offsetMin = 45)
+        val s1 = SleepShiftSettings(enabled = true, startTimeMin = 22 * 60 + 30, restoreTimeMin = 6 * 60 + 30, offsetMin = 60)
         val p1 = TimezoneScheduler.planNight(s1, SchedulerState(), now, originalZone)
-        assertEquals(45, p1.offsetMin)
+        assertEquals(60, p1.offsetMin)
         // 同一晚重新武装：FIXED 按新设置重算（不推进策略进度）
         val s2 = s1.copy(offsetMin = 180)
         val p2 = TimezoneScheduler.planNight(s2, p1.state, now, originalZone)
