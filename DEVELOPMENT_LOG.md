@@ -58,3 +58,19 @@
 - **尝试方案**：确认环境变量已写入注册表（`[Environment]::GetEnvironmentVariable("JAVA_HOME","Machine")` 返回正确）。
 - **结果**：进程环境是会话启动时快照，后续修改不实时生效。
 - **最终解决方式**：命令行调用时显式指定 `JAVA_HOME='D:\AndroidDev\JDK\jdk-21.0.12.8'`；新开的终端/Android Studio 会自动读到新环境变量。
+
+### 7. v2 产品重设计：可配置偏移 + 按显示时间恢复
+
+- **日期**：2026-08-19
+- **背景**：原方案固定 22:00/06:00 + GMT+10。升级为用户可配置的智能睡眠干预系统：开始/恢复时间连续选择、偏移量滑动条（0-180min、15 步进）、三种偏移模式、实时效果预览、Debug 测试入口。
+- **关键决策**：
+  1. **偏移量可变** → 动态时区 ID：`GMT±HH:MM` = 原始 UTC 偏移 + 偏移分钟（如 +135min → `GMT+10:15`）。偏移为 15 的倍数保证分钟位 ∈ {00,15,30,45}，恒为 ICU 可解析格式。
+  2. **恢复按"系统显示时间"触发**：恢复时刻 = 开始时刻 +（夜间显示时长 − 偏移）。例：start 22:30、restore 06:30、offset +120 → 真实 04:30（显示 06:30）恢复，避免"08:30 突然跳回 06:30"。
+  3. **三种偏移模式**：
+     - FIXED：每晚 = 目标偏移
+     - GRADUAL：第 N 晚 = min(step×N, target)，逐日递增至目标封顶（step 默认 30min）
+     - FLUCTUATION：target ± range，候选服从三角分布（峰值在目标值，非完全随机）+ 每日变化限幅（默认 ±30min）
+  4. **持久化**：Preferences DataStore（1.1.1），用户配置 `SleepShiftSettings` 与内部状态 `SchedulerState` 分层；`originalTimezoneId` 写保护（首次写入不可覆盖）。
+  5. **恢复调度防重复推进**：`armedEpochDay` 标记已武装夜晚，保证同一晚策略状态只推进一次。
+- **架构**：UI → ViewModel → SettingsRepository(DataStore) → OffsetStrategy → TimezoneScheduler → AlarmReceiver → `DPM.setTimeZone()`。
+- **Debug 测试入口**（阶段 6 实现）：「立即偏移 / 立即恢复」UI 按钮 + adb 广播（`am broadcast -n com.sleepshift/.AlarmReceiver -a com.sleepshift.action.TEST_SHIFT`），不依赖等待真实时间。

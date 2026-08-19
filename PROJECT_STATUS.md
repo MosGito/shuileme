@@ -4,88 +4,88 @@
 
 ## 项目目标
 
-开发一个 Android **Device Owner** 应用（SleepShift），实现：
-1. 用户授权后成为 Device Owner
-2. 每天晚上 22:00 自动修改系统时区，让系统显示时间向未来偏移约 2 小时
-3. 凌晨 6:00 恢复原始时区
-4. 使用 Kotlin + Jetpack Compose 开发
+开发一个 Android **Device Owner** 应用（SleepShift），通过修改系统时区，在用户设定的睡眠窗口内让显示时间向未来偏移，形成自然睡眠暗示（如真实 22:30 → 显示 00:00）。
 
-技术要点：关键 API 为 `DevicePolicyManager.setTimeZone()`（Android 6.0+ 专为 Device Owner 提供），配合 `AlarmManager.setExactAndAllowWhileIdle()` 做定时调度。
+**v2 升级点（2026-08-19 起）**：
+- 时间/偏移全部**用户可配置**（连续交互：Wheel Picker + 滑动条），不再硬编码 22:00/06:00/GMT+10
+- **恢复按"系统显示时间"触发**：显示时间达到设置的恢复时间时恢复（真实触发提前偏移量），避免"08:30 跳回 06:30"
+- 三种偏移策略模式：**FIXED（固定）/ GRADUAL（逐日递增）/ FLUCTUATION（目标±范围）**
+- 技术要点：`DevicePolicyManager.setTimeZone()`（Device Owner）+ `AlarmManager.setExactAndAllowWhileIdle()`；偏移量动态生成时区 ID `GMT±HH:MM`（如 +135min → `GMT+10:15`）
+- 持久化：Preferences DataStore（`androidx.datastore:datastore-preferences:1.1.1`）
 
 ## 已完成功能
 
-- [x] **开发环境搭建**（2026-08-19）
-  - JDK 21 LTS（`D:\AndroidDev\JDK\jdk-21.0.12.8`），JAVA_HOME / PATH 已配置
-  - Android Studio 2026.1.3.7（`D:\AndroidDev\Android Studio`）
-  - Android SDK（`D:\AndroidDev\AndroidSdk`）：platform-tools / platform-36 / build-tools-36 / emulator 37.1.11 / system-images;android-36;google_apis;x86_64 / AEHD 驱动 2.2（已运行）
-  - 模拟器 AVD：`SleepShift_AVD`（Pixel 外形，数据在 `D:\AndroidDev\AVD\SleepShift_AVD`）
-  - 全部组件部署在 D 盘统一目录 `D:\AndroidDev\`，C 盘无残留
-  - 验证：JDK 21 ✅ / adb 1.0.41 ✅ / AVD 识别 ✅ / AEHD 硬件加速可用 ✅
-- [x] **项目创建**（2026-08-19）
-  - 项目路径：`D:\AndroidDev\Projects\SleepShift`
-  - Kotlin + Jetpack Compose，AGP 8.13.2 / Kotlin 2.4.10 / Compose BOM 2025.08.00 / Gradle 8.14.3
-  - compileSdk 36 / targetSdk 36 / minSdk 26
-  - 已声明 `DeviceAdminReceiver`（`com.sleepshift.admin.DeviceAdminReceiver`）+ device_admin.xml
-  - `./gradlew assembleDebug` 构建成功，生成 `app-debug.apk`（11MB）
-- [x] **获取 Device Owner 授权**（2026-08-19）
-  - 模拟器 `SleepShift_AVD`（API 36 google_apis）启动正常，AEHD 硬件加速
-  - 安装 debug APK 成功
-  - `dpm set-device-owner com.sleepshift/.admin.DeviceAdminReceiver` 一次成功
-  - 验证：`dpm list-owners` → `User 0: admin=com.sleepshift/.admin.DeviceAdminReceiver,DeviceOwner,Affiliated` ✅
-  - App 可正常启动运行（MainActivity 在前台）
-  - 注：debug 构建 APK 在此环境可直接授权，未遇到 `testOnly=true` 拒绝问题
+### 环境与项目搭建（2026-08-19）
+- [x] **开发环境搭建**：JDK 21 LTS（`D:\AndroidDev\JDK\jdk-21.0.12.8`）、Android Studio 2026.1.3.7、Android SDK 36、模拟器 `SleepShift_AVD`（AEHD 硬件加速），全部部署在 D 盘
+- [x] **项目创建**：Kotlin + Jetpack Compose，AGP 8.13.2 / Kotlin 2.4.10 / Compose BOM 2025.08.00 / Gradle 8.14.3，compileSdk 36 / targetSdk 36 / minSdk 26
+- [x] **获取 Device Owner 授权**：`dpm set-device-owner com.sleepshift/.admin.DeviceAdminReceiver` 一次成功，`list-owners` 验证 ✅
+
+### v2 重设计（2026-08-19）
+- [x] **产品架构重设计**：从固定 22:00/06:00 + GMT+10 升级为可配置的智能睡眠干预系统（时间连续选择、偏移滑动条 0-180min/15 步进、三种模式、实时预览、Debug 测试入口），详见 DEVELOPMENT_LOG #7
+- [x] **阶段 1：数据模型**（`assembleDebug` ✅）
+  - 新增 `SleepShiftSettings`（用户配置：enabled / startTimeMin / restoreTimeMin / offsetMin / mode / 模式参数）+ `SchedulerState`（内部运行时：进度、前一晚偏移、当前偏移、原始时区、武装夜晚标记）
+  - 新增 `NightWindow` 推导模型，**编码 v2 恢复逻辑**：`realWindow = nightLength - offset`（恢复=显示时间达 restoreTime 那一刻）+ 配置合法性校验
+  - 新增 `OffsetStrategy` 三实现：`FixedStrategy` / `GradualStrategy`（min(step×N, target)）/ `FluctuationStrategy`（三角分布 + 每日变化限幅）
+  - 新增 `SettingsRepository`（Preferences DataStore）：用户配置/内部状态分层，`originalTimezoneId` 写保护
+  - 新增纯函数 `buildShiftTimeZoneId(originalOffsetMillis, offsetMin)` → 动态 `GMT±HH:MM`
+  - 依赖：`androidx.datastore:datastore-preferences:1.1.1`
 
 ## 当前开发阶段
 
-**任务 #4：实现 22:00/6:00 时区自动切换**
+**阶段 2：Compose UI**（下一步）
 
-- 核心 API：`DevicePolicyManager.setTimeZone()`（Device Owner 专用）
-- 定时调度：`AlarmManager.setExactAndAllowWhileIdle()` 注册每天 22:00 / 6:00 的精确闹钟 + `BroadcastReceiver`
-- 实现思路：先保存原始时区 ID → 22:00 设置为 `GMT+10`（相对北京 +8h 偏移 2h）→ 6:00 恢复原始时区
-- 设备重启后 `BootReceiver`（`BOOT_COMPLETED`）重新注册定时器
+- 底部导航三页：今日 / 配置 / 模式
+- `TimeWheelPicker`（自研双列轮盘，小时+分钟，分钟级连续选择）
+- `OffsetSlider`（0-180min，15 步进）+ `LivePreview`（真实时间 → 偏移后显示，实时更新）
+- 先用内存假数据，不接 DataStore（阶段 3 接线）
+- 依赖：`androidx.navigation:navigation-compose`、`androidx.lifecycle:lifecycle-viewmodel-compose`
 
 ## 遇到的问题
 
 > 详细记录（日期/问题/尝试方案/结果/最终解决方式）见 [DEVELOPMENT_LOG.md](./DEVELOPMENT_LOG.md)。此处仅列当前仍相关的事项：
 
-- **构建相关（已解决）**：Compose BOM 2026.08.00 需 compileSdk 37 + AGP 9.1+，BOM 已锁定 `2025.08.00`（→ Compose 1.9.0）。⚠️ 若以后升级 BOM，需同步升级 AGP/compileSdk。
+- **构建相关（已解决）**：Compose BOM 2026.08.00 需 compileSdk 37 + AGP 9.1+，BOM 已锁定 `2025.08.00`。⚠️ 若升级 BOM 需同步升级 AGP/compileSdk。
 - **下载相关（已解决）**：Gradle 发行源改腾讯镜像；GitHub 直连不稳定用 winget/加 `--ssl-no-revoke`。
 - **环境变量**：当前 bash 会话不继承新设环境变量，命令行需显式 `JAVA_HOME='D:\AndroidDev\JDK\jdk-21.0.12.8'`。
-- ~~Device Owner 预期问题~~：原担心 debug APK 带 `testOnly=true` 会被 `dpm` 拒绝——实测 debug APK 直接授权成功，未复现。若日后真机/其他镜像遇到，改用 release 签名构建。
+- **v2 恢复逻辑**：恢复按**显示时间**触发（真实 04:30 恢复 +120min 偏移，显示 06:30）。⚠️ 注意系统时区在偏移窗口内确实提前 2 小时。
+- **时区测试提醒**：测试会真的改模拟器系统时区，测完记得恢复。
 
 ## 已修改的重要文件
 
 | 文件 | 说明 |
 |---|---|
-| `app/src/main/AndroidManifest.xml` | 声明 `DeviceAdminReceiver` + `RECEIVE_BOOT_COMPLETED` 权限 + 入口 Activity |
-| `app/src/main/java/com/sleepshift/admin/DeviceAdminReceiver.kt` | Device Admin/Owner 接收器（当前为空实现，任务 #4 加回调） |
-| `app/src/main/java/com/sleepshift/MainActivity.kt` | Compose 主界面（占位 UI） |
-| `app/build.gradle.kts` | AGP 8.13.2 / compileSdk 36 / minSdk 26 / Compose / Java 17 |
-| `gradle/libs.versions.toml` | 版本目录；**BOM 锁定 `2025.08.00`**（勿随意升级，见注意项） |
+| `app/src/main/AndroidManifest.xml` | 声明 `DeviceAdminReceiver` + `RECEIVE_BOOT_COMPLETED` + 入口 Activity（阶段 5 将注册 AlarmReceiver/BootReceiver） |
+| `app/src/main/java/com/sleepshift/admin/DeviceAdminReceiver.kt` | Device Owner 接收器（阶段 4/6 加 onEnabled/onDisabled 回调） |
+| `app/src/main/java/com/sleepshift/MainActivity.kt` | Compose 主界面（占位 UI，阶段 2 重构为导航宿主） |
+| `app/src/main/java/com/sleepshift/model/SleepShiftModels.kt` | **v2 数据模型**：SleepShiftSettings / SchedulerState / NightWindow / 默认值 / 校验 / `buildShiftTimeZoneId` |
+| `app/src/main/java/com/sleepshift/strategy/OffsetStrategy.kt` | **偏移策略引擎**：FIXED / GRADUAL / FLUCTUATION |
+| `app/src/main/java/com/sleepshift/data/SettingsRepository.kt` | **Preferences DataStore 仓库**（分层存储 + 原始时区写保护） |
+| `app/build.gradle.kts` | AGP 8.13.2 / compileSdk 36 / minSdk 26 / Compose / Java 17 / + datastore |
+| `gradle/libs.versions.toml` | 版本目录；BOM 锁定 `2025.08.00`；+ datastore 1.1.1 |
 | `settings.gradle.kts` | 阿里云 maven 镜像加速（官方源兜底） |
 | `gradle/wrapper/gradle-wrapper.properties` | Gradle 8.14.3，分发地址指向腾讯镜像 |
 | `local.properties` | `sdk.dir=D:\AndroidDev\AndroidSdk`（已 gitignore，不入库） |
 | `PROJECT_STATUS.md` / `DEVELOPMENT_LOG.md` | 状态与问题记录 |
 
-## 下一步计划
+## 下一步计划（v2 七阶段）
 
-1. **任务 #4**：实现时区自动切换模块
-   - 新增 `DeviceAdminReceiver` 回调（`onEnabled`/`onDisabled` 时注册/清除定时器）
-   - 新增 `TimezoneScheduler`：保存原始时区、注册每日 22:00/6:00 精确闹钟
-   - 新增 `AlarmReceiver`：到点调用 `DevicePolicyManager.setTimeZone()`
-   - 新增 `BootReceiver`：重启后重新注册
-   - 编译验证 `assembleDebug`
-2. **任务 #5**：模拟器端到端测试
-   - 手动触发时区切换（改系统时间或直接发广播）验证 +2h / 恢复
-   - 模拟重启验证定时器仍生效
-   - 更新 PROJECT_STATUS.md / DEVELOPMENT_LOG.md
+| 阶段 | 内容 | 状态 |
+|---|---|---|
+| 1 | 数据模型（Settings + DataStore + 策略引擎） | ✅ 完成 |
+| 2 | **Compose UI**（导航 + Wheel Picker + 滑动条 + 实时预览，内存假数据） | ⏳ 当前 |
+| 3 | 配置保存（UI → ViewModel → Repository → DataStore 全链路） | 待做 |
+| 4 | Scheduler 重构（原始时区保存、epoch 计算、动态 GMT±HH:MM、武装/取消、策略状态推进 + 防重复武装标记） | 待做 |
+| 5 | Receiver 适配（AlarmReceiver extra 传参 + 重新武装；BootReceiver 重启重注册；DeviceAdminReceiver 接 Scheduler） | 待做 |
+| 6 | DPM 接入（`setTimeZone` 动态 ID + 防御校验；**Debug 测试入口：立即偏移/立即恢复**，UI 按钮 + adb 广播） | 待做 |
+| 7 | 模拟器端到端测试（三模式各验证一晚、重启持久性、边界） | 待做 |
 
 ## 下次继续开发时需要注意的事项
 
 - **命令行构建**：当前 bash 会话不继承新环境变量，构建必须显式：
   `JAVA_HOME='D:\AndroidDev\JDK\jdk-21.0.12.8' ./gradlew.bat assembleDebug`（在项目根目录）
-- **adb / 模拟器**：adb 在 `D:\AndroidDev\AndroidSdk\platform-tools\adb.exe`；模拟器 `SleepShift_AVD` 已授权为 Device Owner，**直接复用即可**。若重置/重建 AVD，需重新执行 `adb shell dpm set-device-owner com.sleepshift/.admin.DeviceAdminReceiver`（前提：设备无账户、无其他 device owner）。
-- **不要随意升级 Compose BOM**：`2025.08.00`（Compose 1.9.0）与 AGP 8.13.2/compileSdk 36 匹配；升级到 2026.08.00 需要同时升 AGP 9.1+ 和 compileSdk 37（会连带改 Gradle、装 platform-37）。
+- **adb / 模拟器**：adb 在 `D:\AndroidDev\AndroidSdk\platform-tools\adb.exe`；模拟器 `SleepShift_AVD` 已授权为 Device Owner，直接复用。若重置 AVD，需重新 `adb shell dpm set-device-owner com.sleepshift/.admin.DeviceAdminReceiver`。
+- **不要随意升级 Compose BOM**：`2025.08.00`（Compose 1.9.0）与 AGP 8.13.2/compileSdk 36 匹配；升级到 2026.08.00 需同时升 AGP 9.1+ 和 compileSdk 37。
 - **Bash 陷阱**：带斜杠的 Windows 参数（如 `/S`、`/MOVE`、`/D=`）会被 MSYS 转换，需 `MSYS2_ARG_CONV_EXCL="*"` 或改用 PowerShell；curl 到部分源需 `--ssl-no-revoke`。
-- **提权脚本**：需管理员执行的 .ps1 必须**纯 ASCII**（PowerShell 5.1 按 GBK 解析无 BOM 中文脚本会静默失败），且用 `Start-Process -Verb RunAs` 方式调用。
-- **时区测试提醒**：测试会真的改模拟器系统时区，测完记得恢复；模拟器时间偏移可能影响其他操作。
+- **提权脚本**：需管理员执行的 .ps1 必须**纯 ASCII**（PowerShell 5.1 按 GBK 解析无 BOM 中文脚本会静默失败）。
+- **v2 调度语义**：恢复时刻 = 开始时刻 +（夜间显示时长 − 偏移）；偏移随策略每晚变化，需用 `armedEpochDay` 标记防止同夜重复推进策略状态。
+- **DataStore**：`originalTimezoneId` 仅在首次启用写入（写保护）；策略状态字段仅 Scheduler 写、UI 只读。
