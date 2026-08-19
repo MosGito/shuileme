@@ -61,6 +61,15 @@ class TimezoneScheduler(
         )
     }
 
+    /**
+     * Debug 测试入口：模拟"新的一晚"——清除武装标记后重新 arm()，
+     * 使策略（GRADUAL/FLUCTUATION）按日推进，无需等待真实时间。
+     */
+    suspend fun forceAdvanceNight() {
+        repository.updateSchedulerState { it.copy(armedEpochDay = -1L) }
+        arm()
+    }
+
     /** 取消武装并清空调度状态 */
     suspend fun cancel() {
         val alarmManager = context.getSystemService(AlarmManager::class.java)
@@ -119,22 +128,23 @@ class TimezoneScheduler(
     suspend fun ensureActiveWindowRestore() {
         val settings = repository.settings.first()
         val state = repository.schedulerState.first()
-        val originalZoneId = state.originalTimezoneId
-        if (!state.armed || originalZoneId.isEmpty()) return
-        if (TimeZone.getDefault().id == originalZoneId) return // 未处于偏移
+        if (!state.armed || state.originalTimezoneId.isEmpty()) return
 
-        val now = System.currentTimeMillis()
-        val activeStart = computePreviousShiftEpoch(settings.startTimeMin, originalZoneId, now)
-        val realWindow = nightLengthMin(settings.startTimeMin, settings.restoreTimeMin) - state.currentOffsetMin
-        val restoreEpoch = activeStart + realWindow * 60_000L
-        if (restoreEpoch > now) {
-            val alarmManager = context.getSystemService(AlarmManager::class.java)
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP, restoreEpoch,
-                restorePendingIntent(mapOf(EXTRA_ZONE_ID to originalZoneId)),
-            )
-            Log.i(TAG, "ensureActiveWindowRestore: 当前偏移窗口恢复闹钟已补充 epoch=$restoreEpoch")
-        }
+        val restoreEpoch = computeActiveRestoreEpoch(
+            nowEpochMillis = System.currentTimeMillis(),
+            currentZoneId = TimeZone.getDefault().id,
+            originalZoneId = state.originalTimezoneId,
+            startTimeMin = settings.startTimeMin,
+            restoreTimeMin = settings.restoreTimeMin,
+            offsetMin = state.currentOffsetMin,
+        ) ?: return
+
+        val alarmManager = context.getSystemService(AlarmManager::class.java)
+        alarmManager.setExactAndAllowWhileIdle(
+            AlarmManager.RTC_WAKEUP, restoreEpoch,
+            restorePendingIntent(mapOf(EXTRA_ZONE_ID to state.originalTimezoneId)),
+        )
+        Log.i(TAG, "ensureActiveWindowRestore: 当前偏移窗口恢复闹钟已补充 epoch=$restoreEpoch")
     }
 
     private suspend fun currentOriginalZoneId(state: SchedulerState): String =
@@ -256,6 +266,25 @@ class TimezoneScheduler(
             var candidate = now.toLocalDate().atTime(startTimeMin / 60, startTimeMin % 60).atZone(zone)
             if (candidate.isAfter(now)) candidate = candidate.minusDays(1)
             return candidate.toInstant().toEpochMilli()
+        }
+
+        /**
+         * 计算"偏移状态启动"时当前偏移窗口的恢复时刻（纯函数，JVM 可单测）。
+         * 当前未偏移、或恢复时刻已过 → 返回 null。
+         */
+        fun computeActiveRestoreEpoch(
+            nowEpochMillis: Long,
+            currentZoneId: String,
+            originalZoneId: String,
+            startTimeMin: Int,
+            restoreTimeMin: Int,
+            offsetMin: Int,
+        ): Long? {
+            if (currentZoneId == originalZoneId) return null
+            val activeStart = computePreviousShiftEpoch(startTimeMin, originalZoneId, nowEpochMillis)
+            val realWindow = nightLengthMin(startTimeMin, restoreTimeMin) - offsetMin
+            val restoreEpoch = activeStart + realWindow * 60_000L
+            return if (restoreEpoch > nowEpochMillis) restoreEpoch else null
         }
 
         /** 恢复时刻：开始时刻 + 真实窗口（分钟） */

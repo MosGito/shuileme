@@ -56,4 +56,4 @@ class FluctuationStrategy(
 
 private fun roundToStep(minutes: Int): Int = ((minutes + OFFSET_STEP_HALF) / OFFSET_STEP_MIN) * OFFSET_STEP_MIN
 
-private const val OFFSET_STEP_HALF = 7
+private const val OFFSET_STEP_HALF = OFFSET_STEP_MIN / 2

@@ -30,7 +30,9 @@ class AlarmReceiver : BroadcastReceiver() {
             action == TimezoneScheduler.ACTION_RESTORE
         val isTestAction = action == ACTION_TEST_ARM ||
             action == ACTION_TEST_CANCEL ||
-            action == ACTION_TEST_SET_ZONE
+            action == ACTION_TEST_SET_ZONE ||
+            action == ACTION_TEST_FORCE_ADVANCE ||
+            action == ACTION_TEST_ACTIVE_RESTORE
         if (!isScheduledAction && !isTestAction) return
         if (isTestAction && !BuildConfig.DEBUG) return
 
@@ -65,6 +67,8 @@ class AlarmReceiver : BroadcastReceiver() {
             }
             ACTION_TEST_ARM -> scheduler.arm()
             ACTION_TEST_CANCEL -> scheduler.cancel()
+            ACTION_TEST_FORCE_ADVANCE -> scheduler.forceAdvanceNight()
+            ACTION_TEST_ACTIVE_RESTORE -> scheduler.ensureActiveWindowRestore()
             ACTION_TEST_SET_ZONE -> {
                 val zone = intent.getStringExtra(TimezoneScheduler.EXTRA_ZONE_ID)
                 if (zone != null) {
@@ -82,5 +86,7 @@ class AlarmReceiver : BroadcastReceiver() {
         const val ACTION_TEST_ARM = "com.sleepshift.action.TEST_ARM"
         const val ACTION_TEST_CANCEL = "com.sleepshift.action.TEST_CANCEL"
         const val ACTION_TEST_SET_ZONE = "com.sleepshift.action.TEST_SET_ZONE"
+        const val ACTION_TEST_FORCE_ADVANCE = "com.sleepshift.action.TEST_FORCE_ADVANCE"
+        const val ACTION_TEST_ACTIVE_RESTORE = "com.sleepshift.action.TEST_ACTIVE_RESTORE"
     }
 }

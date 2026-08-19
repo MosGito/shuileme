@@ -12,7 +12,8 @@ import com.sleepshift.ui.theme.SleepShiftTheme
 class MainActivity : ComponentActivity() {
 
     private val settingsViewModel: SettingsViewModel by viewModels {
-        SettingsViewModelFactory((application as SleepShiftApplication).settingsRepository)
+        val app = application as SleepShiftApplication
+        SettingsViewModelFactory(app.settingsRepository, app.timezoneScheduler)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

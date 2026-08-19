@@ -67,14 +67,23 @@
   - `OFFSET_STEP_MIN=60`；渐进步进 60/120；波动范围 0/60；波动每日变化限幅 60
   - `settingsVersion` 升到 **v2**，`migrate()` v1→v2 归一化旧 15 分钟值；读取时防御性归一化
   - UI 滑条均改整小时步进；模拟器验证中点吸附到 +120 ✅
+- [x] **阶段 5：模拟器端到端验证**（单测 12/12 ✅ + `assembleDebug` ✅）
+  - **FIXED**：+60 / +120 / +180 三档 SHIFT→对应偏移（+0100/+0200/+0300）、RESTORE→恢复 ✅
+  - **GRADUAL**：`TEST_FORCE_ADVANCE` 模拟多天 → day1 +60 / day2 +120 / day3 +180 ✅
+  - **FLUCTUATION**：20 次推进分布 120×14/180×5/60×1（整小时、范围内、无负值）✅ + 属性单测（1000 样本）
+  - **正常重启**：BootReceiver 触发 + scheduler 重新 arm ✅
+  - **偏移状态重启**：模拟器启动重置时区（环境限制）无法真实复现；`computeActiveRestoreEpoch` 决策逻辑抽取纯函数并单测（窗口内返回正确恢复时刻 / 未偏移·已过返回 null）✅
+  - **边界-禁用**：enabled=false → cancel + 恢复时区 ✅（**修复**：原缺失该联动）
+  - **边界-改配置**：改偏移自动重新武装 ✅（**修复**：原缺失，旧闹钟会在旧时刻按旧配置执行）
+  - **边界-启用晚于开始时间**：单测覆盖跨天 ✅
+  - **修复清单**：VM 联动 arm / cancel+restore；FLUCTUATION 取整偏差（OFFSET_STEP_HALF 7→30）；ensureActiveWindowRestore 纯函数化
 
 ## 当前开发阶段
 
-**阶段 5：模拟器端到端测试**（下一步，**待确认后开始**）
+**项目功能已完成**（阶段 5 收尾，按用户指示不进入 UI 优化/发布阶段）
 
-- GRADUAL / FLUCTUATION 各验证一晚（FIXED 已验证）
-- 模拟器重启持久性验证（BootReceiver 重新武装 + 偏移状态重启恢复）
-- 边界：启用晚于开始时间、禁用即恢复、原始时区写保护
+- 功能链路全部验证通过（三模式 / 重启 / 边界）
+- 待定：后续方向（发布准备 / 真机验证 / UI 增强）由用户决定
 
 ## 遇到的问题
 
@@ -130,7 +139,7 @@
 | 4-A | TimezoneScheduler 核心（纯计算 / 策略接入 / 状态 / 闹钟武装，零硬编码） | ✅ 完成 |
 | 4-B | Receiver 适配 + DPM 接入 + adb 测试入口 | ✅ 完成 |
 | 4-C | 偏移粒度约束为整小时（settingsVersion v2 迁移） | ✅ 完成 |
-| 5 | **模拟器端到端测试**（GRADUAL/FLUCTUATION 各验证一晚；重启持久性） | ⏳ 当前 |
+| 5 | 模拟器端到端验证（三模式 / 重启 / 边界，含修复） | ✅ 完成 |
 
 ## 下次继续开发时需要注意的事项
 
@@ -144,6 +153,8 @@
 - **DataStore**：`originalTimezoneId` 仅在首次启用写入（写保护）；策略状态字段仅 Scheduler 写、UI 只读。
 - **DO 应用 force-stop 受限**：`am force-stop` 杀不掉 Device Owner 应用进程，App 重启/持久化验证用 `adb reboot`（更严格的验证方式）。
 - **⚠️ 平台约束（已决策）：setTimeZone 只应用 IANA 时区 ID**：Android 16 (API 36) 自定义 `GMT±HH:MM` 会被静默忽略（返回 true 不生效）。**已决策约束偏移为整小时**（`Etc/GMT±H`），`OFFSET_STEP_MIN=60`，settingsVersion v2 迁移旧值。
+- **⚠️ 模拟器环境限制：启动重置时区**：本模拟器（google_apis）每次启动将时区强制重置为 GMT，覆盖 `persist.sys.timezone`（非 GMS、与 auto_time/auto_time_zone 无关）。→ "偏移状态重启"场景无法在模拟器真实复现；真机 `persist.sys.timezone` 会保留。相关逻辑已纯函数化单测。
+- **⚠️ 模拟器环境：SCHEDULE_EXACT_ALARM 需授权**：每次重装 APK 需重新 `adb shell appops set com.sleepshift SCHEDULE_EXACT_ALARM allow`（重启不丢失）。
 - **⚠️ 自动时区必须关闭**：`AUTO_TIME_ZONE=1` 时 `setTimeZone` 返回 false；应用在 `DeviceOwner.setTimeZone` 内自动关闭（DO 可写）。
 - **⚠️ SCHEDULE_EXACT_ALARM 需授权**：Manifest 声明不自动授予（DO 也非豁免）；模拟器需 `adb shell appops set com.sleepshift SCHEDULE_EXACT_ALARM allow`；`scheduleAlarms` 已加 `setAlarmClock` 回退（无权限时兜底）。
 - **模拟器当前残留状态**：`enabled=true`、`offsetMin=120`（阶段 4-C 滑条验证产物）、已武装、时区已恢复 GMT。

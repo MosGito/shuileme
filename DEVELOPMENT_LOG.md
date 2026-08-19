@@ -135,3 +135,18 @@
   - UI：偏移滑条 steps=2（0/60/120/180）、渐进步进 0/120、波动范围 0/60。
 - **验证**：单测 7/7；模拟器滑条中点点击吸附到 +120（整小时）✅；`assembleDebug` ✅。
 - **说明**：`buildShiftZoneId` 的 `GMT±HH:MM` 分数回退路径保留（防御，正常产品流程不再产生分数偏移）。
+
+### 12. 阶段 5：模拟器端到端验证（发现并修复 4 个问题）
+
+- **日期**：2026-08-20
+- **验证结果**：FIXED 三档、GRADUAL 逐天推进、FLUCTUATION 波动分布、正常重启重新武装、禁用即恢复、改配置自动重新武装，全部通过（单测 12/12）。
+- **问题修复**：
+  1. **禁用未联动**：`setEnabled(false)` 原来只改 DataStore，不 cancel 闹钟/不恢复时区 → VM 改为：停用→`cancel()` + `applyRestore()`；启用→`arm()`。
+  2. **改配置未重新武装**：arm 后改偏移/开始时间，旧闹钟仍在旧时刻按旧配置触发 → VM 所有 setter 改为写库后 `scheduler.arm()`（`armedEpochDay` 守卫保证同夜不重复推进，FIXED 同夜按新设置重算）。
+  3. **FLUCTUATION 取整偏差**：`OFFSET_STEP_HALF=7` 是 15 步进旧值，整小时（60）下应取 30 → 改为 `OFFSET_STEP_MIN / 2`。
+  4. **偏移状态重启决策逻辑不可测**：`ensureActiveWindowRestore` 抽纯函数 `computeActiveRestoreEpoch`（未偏移/已过→null，窗口内→恢复时刻）+ 单测。
+- **⚠️ 模拟器环境发现（非应用 bug）**：模拟器（google_apis）每次启动将时区强制重置为 GMT，覆盖 `persist.sys.timezone`（禁用 GMS、auto_time=0 均无效）→ "偏移状态重启"无法在模拟器真实复现；真机 persist.sys.timezone 保留。相关逻辑已纯函数化单测兜底。
+- **调试教训**：FLUCTUATION "恒 120" 一度误判为随机性问题，实为 UI 点击未真正选中模式（"+60" 是渐进步进而非波动范围）——**测试脚本要显式断言"模式已选中"再操作**。
+- **adb 测试命令备忘**：
+  - `TEST_FORCE_ADVANCE`：模拟新一晚，策略按日推进（GRADUAL/FLUCTUATION 验证）
+  - `TEST_ACTIVE_RESTORE`：模拟偏移状态启动，触发当前窗口恢复闹钟兜底
