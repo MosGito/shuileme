@@ -37,16 +37,25 @@
   - 模式页：三模式卡片 + 参数滑条（渐进步进 / 波动范围）+ 渐进序列预览（复用策略引擎）
   - UI 由 `SettingsViewModel`（内存 `mutableStateOf`）驱动，与 `SleepShiftSettings` 完全兼容（阶段 3 接 DataStore）
   - 依赖：`androidx.lifecycle:lifecycle-viewmodel-compose:2.9.1`
+- [x] **阶段 3：配置保存（DataStore 持久化）**（`assembleDebug` ✅ + 模拟器验证 ✅）
+  - 分层固化：UI → SettingsViewModel → SettingsRepository → DataStore，Repository 为唯一数据入口
+  - 新增 `SleepShiftApplication` 持有 Repository 单例；`SettingsViewModelFactory` 注入 ViewModel
+  - `SettingsViewModel` 改 StateFlow（`stateIn` + `collectAsState`），UI 方法签名不变，修改即保存
+  - Repository 增加 `settingsVersion`（版本 1）+ `migrate()` 逐版本迁移框架（未来结构升级通道）
+  - setter 加"值未变跳过写入"守卫，避免轮盘/滑条拖动产生冗余写盘
+  - **模拟器验证**：改 enabled（关→开）、偏移（120→45 分钟）→ 重启模拟器 → 配置从磁盘恢复 ✅
+  - 技术发现：DO 应用 `am force-stop` 受保护（杀不掉），持久化验证改用模拟器重启
 
 ## 当前开发阶段
 
-**阶段 3：配置保存**（下一步）
+**阶段 4：Scheduler 重构**（下一步）
 
-- UI → ViewModel → SettingsRepository(DataStore) 全链路
-- `SettingsViewModel` 改为 DataStore 驱动（`collectAsState`），方法签名不变
-- `enabled` 总开关持久化；重启模拟器后配置保持
-- `SettingsRepository` 单例注入（Application 层或 ViewModelFactory）
-- 验证：改配置 → 杀进程/重启 → 值保持
+- 原始时区保存（首次启用时写保护，DataStore `originalTimezoneId`）
+- epoch 计算：下次 startTime（原始时区）+ `realWindowMin`（恢复按显示时间达 restoreTime 那一刻）
+- 动态时区 ID：`buildShiftTimeZoneId` → `GMT±HH:MM`
+- 武装/取消精确闹钟（`AlarmManager.setExactAndAllowWhileIdle` + `RTC_WAKEUP`）
+- 策略状态推进（`armedEpochDay` 防同夜重复推进）+ `OffsetStrategy` 接入
+- 状态写入 `SchedulerState`（DataStore），原始时区写保护复用
 
 ## 遇到的问题
 
@@ -64,9 +73,12 @@
 |---|---|
 | `app/src/main/AndroidManifest.xml` | 声明 `DeviceAdminReceiver` + `RECEIVE_BOOT_COMPLETED` + 入口 Activity（阶段 5 将注册 AlarmReceiver/BootReceiver） |
 | `app/src/main/java/com/sleepshift/admin/DeviceAdminReceiver.kt` | Device Owner 接收器（阶段 4/6 加 onEnabled/onDisabled 回调） |
-| `app/src/main/java/com/sleepshift/MainActivity.kt` | 入口 Activity，挂载 SleepShiftApp |
+| `app/src/main/AndroidManifest.xml` | 声明 `DeviceAdminReceiver` + `RECEIVE_BOOT_COMPLETED` + Application（`.SleepShiftApplication`） |
+| `app/src/main/java/com/sleepshift/SleepShiftApplication.kt` | Application 单例容器，持有 `SettingsRepository` |
+| `app/src/main/java/com/sleepshift/MainActivity.kt` | 入口 Activity，`viewModels` 注入 Repository 工厂 |
 | `app/src/main/java/com/sleepshift/ui/SleepShiftApp.kt` | 底部导航壳（三页状态式切换） |
-| `app/src/main/java/com/sleepshift/ui/SettingsViewModel.kt` | 设置 ViewModel（阶段 2 内存态，阶段 3 接 DataStore） |
+| `app/src/main/java/com/sleepshift/ui/SettingsViewModel.kt` | 设置 ViewModel（StateFlow 驱动，DataStore 持久化） |
+| `app/src/main/java/com/sleepshift/ui/SettingsViewModelFactory.kt` | ViewModel 工厂（注入 Repository 单例） |
 | `app/src/main/java/com/sleepshift/ui/NightPlan.kt` | 今晚窗口展示推算（真实→显示时刻） |
 | `app/src/main/java/com/sleepshift/ui/home/HomeScreen.kt` | 首页：状态/预览/下次切换/总开关 |
 | `app/src/main/java/com/sleepshift/ui/config/ConfigScreen.kt` | 配置页：实时预览 + 轮盘 + 滑动条 |
@@ -91,7 +103,8 @@
 |---|---|---|
 | 1 | 数据模型（Settings + DataStore + 策略引擎） | ✅ 完成 |
 | 2 | Compose UI（导航 + Wheel Picker + 滑动条 + 实时预览，内存假数据） | ✅ 完成 |
-| 3 | **配置保存**（UI → ViewModel → Repository → DataStore 全链路） | ⏳ 当前 |
+| 3 | 配置保存（UI → ViewModel → Repository → DataStore 全链路 + 模拟器重启验证） | ✅ 完成 |
+| 4 | **Scheduler 重构**（原始时区、epoch 计算、动态 GMT±HH:MM、武装/取消、策略推进） | ⏳ 当前 |
 | 4 | Scheduler 重构（原始时区保存、epoch 计算、动态 GMT±HH:MM、武装/取消、策略状态推进 + 防重复武装标记） | 待做 |
 | 5 | Receiver 适配（AlarmReceiver extra 传参 + 重新武装；BootReceiver 重启重注册；DeviceAdminReceiver 接 Scheduler） | 待做 |
 | 6 | DPM 接入（`setTimeZone` 动态 ID + 防御校验；**Debug 测试入口：立即偏移/立即恢复**，UI 按钮 + adb 广播） | 待做 |
@@ -107,3 +120,5 @@
 - **提权脚本**：需管理员执行的 .ps1 必须**纯 ASCII**（PowerShell 5.1 按 GBK 解析无 BOM 中文脚本会静默失败）。
 - **v2 调度语义**：恢复时刻 = 开始时刻 +（夜间显示时长 − 偏移）；偏移随策略每晚变化，需用 `armedEpochDay` 标记防止同夜重复推进策略状态。
 - **DataStore**：`originalTimezoneId` 仅在首次启用写入（写保护）；策略状态字段仅 Scheduler 写、UI 只读。
+- **DO 应用 force-stop 受限**：`am force-stop` 杀不掉 Device Owner 应用进程，App 重启/持久化验证用 `adb reboot`（更严格的验证方式）。
+- **模拟器当前残留配置**：`enabled=true`、`offsetMin=45` 已持久化（阶段 3 验证产物），后续测试注意。

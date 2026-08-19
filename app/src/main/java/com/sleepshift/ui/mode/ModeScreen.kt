@@ -17,6 +17,8 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -30,7 +32,7 @@ import kotlin.math.roundToInt
 /** 模式页：三种偏移策略选择 + 模式参数 */
 @Composable
 fun ModeScreen(viewModel: SettingsViewModel) {
-    val settings = viewModel.settings
+    val settings by viewModel.settings.collectAsState()
     Column(
         modifier = Modifier
             .fillMaxSize()

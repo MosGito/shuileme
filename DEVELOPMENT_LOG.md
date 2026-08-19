@@ -74,3 +74,19 @@
   5. **恢复调度防重复推进**：`armedEpochDay` 标记已武装夜晚，保证同一晚策略状态只推进一次。
 - **架构**：UI → ViewModel → SettingsRepository(DataStore) → OffsetStrategy → TimezoneScheduler → AlarmReceiver → `DPM.setTimeZone()`。
 - **Debug 测试入口**（阶段 6 实现）：「立即偏移 / 立即恢复」UI 按钮 + adb 广播（`am broadcast -n com.sleepshift/.AlarmReceiver -a com.sleepshift.action.TEST_SHIFT`），不依赖等待真实时间。
+
+### 8. 阶段 3：DataStore 配置持久化
+
+- **日期**：2026-08-19
+- **改动**：`SleepShiftSettings`/`SchedulerState` 完整接入 Preferences DataStore；分层固化 UI → ViewModel → Repository → DataStore；新增 `SleepShiftApplication`（Repository 单例）与 `SettingsViewModelFactory`。
+- **技术决策**：
+  1. **StateFlow 驱动**：VM 用 `stateIn(viewModelScope, WhileSubscribed(5s), default)` + UI `collectAsState`；UI 方法签名不变（只把 `val settings = viewModel.settings` 改为 `by ...collectAsState()`）。
+  2. **settingsVersion + migrate()**：每次写入自动维护版本（当前=1），`migrate()` 提供逐版本迁移通道，供未来结构升级。
+  3. **"值未变跳过写入"守卫**：setter 先比较当前值，相同则跳过，避免轮盘/滑条快速拖动产生大量冗余写盘。
+  4. **原始时区写保护下沉到 Repository**：`updateSchedulerState` 只在当前为空时写入 `originalTimezoneId`。
+- **验证发现（重要）**：**Device Owner 应用无法被 `am force-stop` 杀死**（进程持续存活），因此"关闭 App 再打开"的持久化验证不可行；改用 `adb reboot`（更强验证）。实测：改 enabled/偏移 → 重启模拟器 → 配置从磁盘恢复 ✅。
+- **验证命令备忘**：
+  - 启动：`D:/AndroidDev/AndroidSdk/emulator/emulator.exe -avd SleepShift_AVD -no-window`
+  - 等待启动：`adb wait-for-device shell 'while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 2; done'`
+  - UI 检查：`adb exec-out uiautomator dump /dev/tty`
+  - 数据文件：`adb shell run-as com.sleepshift ls -la files/datastore/`（debug 可 run-as）

@@ -13,6 +13,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -29,7 +31,7 @@ private val TIME_FMT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 /** 首页：今日状态 + 实时预览 + 下次切换 + 总开关 */
 @Composable
 fun HomeScreen(viewModel: SettingsViewModel) {
-    val settings = viewModel.settings
+    val settings by viewModel.settings.collectAsState()
     val now = rememberNow()
     val plan = computeNightPlan(now, settings)
 

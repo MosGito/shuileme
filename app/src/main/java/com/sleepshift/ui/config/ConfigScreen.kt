@@ -11,6 +11,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.sleepshift.ui.SettingsViewModel
@@ -26,7 +28,7 @@ private val TIME_FMT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 /** 配置页：实时预览 + 开始/恢复时间轮盘 + 偏移滑动条 + 今晚效果 */
 @Composable
 fun ConfigScreen(viewModel: SettingsViewModel) {
-    val settings = viewModel.settings
+    val settings by viewModel.settings.collectAsState()
     val now = rememberNow()
     val plan = computeNightPlan(now, settings)
 
