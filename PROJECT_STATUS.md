@@ -45,17 +45,24 @@
   - setter 加"值未变跳过写入"守卫，避免轮盘/滑条拖动产生冗余写盘
   - **模拟器验证**：改 enabled（关→开）、偏移（120→45 分钟）→ 重启模拟器 → 配置从磁盘恢复 ✅
   - 技术发现：DO 应用 `am force-stop` 受保护（杀不掉），持久化验证改用模拟器重启
+- [x] **阶段 4-A：TimezoneScheduler 核心**（单测 5/5 ✅ + `assembleDebug` ✅）
+  - 全新 `TimezoneScheduler`：**零硬编码**（无 22:00/06:00/GMT+10/固定 120），全部来自 `SleepShiftSettings`
+  - 纯计算（JVM 可单测）：`planNight` / `computeNextShiftEpoch`（原始时区下次 startTime）/ `computeRestoreEpoch`（= 开始 + realWindow）/ `buildShiftZoneId`
+  - 恢复逻辑：真实窗口 = 夜间显示时长 − **当晚实际偏移**（+120min → 真实 04:30 恢复、显示 06:30）
+  - 策略接入：FIXED/GRADUAL/FLUCTUATION 每晚推进实际偏移，`armedEpochDay` 防同夜重复推进
+  - 状态管理：`SchedulerState` 新增 `armed` / `nextShiftEpoch` / `nextRestoreEpoch`（DataStore 持久化）
+  - 闹钟武装：`setExactAndAllowWhileIdle` + `RTC_WAKEUP`，PendingIntent 目标 `AlarmReceiver`（阶段 4-B 注册）；Manifest 增 `SCHEDULE_EXACT_ALARM`
+  - JVM 单测（`testDebugUnitTest`）：22:30/06:30/+120 → shift=22:30、restore=04:30 等 5 例全过
+  - 修复：`strategyFor` 移入 companion（伴生对象不能调实例方法）；`buildShiftTimeZoneId` 小时位补零
 
 ## 当前开发阶段
 
-**阶段 4：Scheduler 重构**（下一步）
+**阶段 4-B：Receiver 适配**（下一步）
 
-- 原始时区保存（首次启用时写保护，DataStore `originalTimezoneId`）
-- epoch 计算：下次 startTime（原始时区）+ `realWindowMin`（恢复按显示时间达 restoreTime 那一刻）
-- 动态时区 ID：`buildShiftTimeZoneId` → `GMT±HH:MM`
-- 武装/取消精确闹钟（`AlarmManager.setExactAndAllowWhileIdle` + `RTC_WAKEUP`）
-- 策略状态推进（`armedEpochDay` 防同夜重复推进）+ `OffsetStrategy` 接入
-- 状态写入 `SchedulerState`（DataStore），原始时区写保护复用
+- `AlarmReceiver`：读 PendingIntent extra（zone_id）→ 执行偏移/恢复 → 重新武装（goAsync + 协程）
+- `BootReceiver`：重启后重新武装（`BOOT_COMPLETED` + `MY_PACKAGE_REPLACED`）
+- `DeviceAdminReceiver`：onEnabled → scheduler.arm()；onDisabled → scheduler.cancel()
+- Manifest 注册两个 Receiver
 
 ## 遇到的问题
 
@@ -71,9 +78,8 @@
 
 | 文件 | 说明 |
 |---|---|
-| `app/src/main/AndroidManifest.xml` | 声明 `DeviceAdminReceiver` + `RECEIVE_BOOT_COMPLETED` + 入口 Activity（阶段 5 将注册 AlarmReceiver/BootReceiver） |
-| `app/src/main/java/com/sleepshift/admin/DeviceAdminReceiver.kt` | Device Owner 接收器（阶段 4/6 加 onEnabled/onDisabled 回调） |
-| `app/src/main/AndroidManifest.xml` | 声明 `DeviceAdminReceiver` + `RECEIVE_BOOT_COMPLETED` + Application（`.SleepShiftApplication`） |
+| `app/src/main/AndroidManifest.xml` | 声明 Application（`.SleepShiftApplication`）+ `DeviceAdminReceiver` + `RECEIVE_BOOT_COMPLETED` + `SCHEDULE_EXACT_ALARM`（阶段 4-B 注册 AlarmReceiver/BootReceiver） |
+| `app/src/main/java/com/sleepshift/admin/DeviceAdminReceiver.kt` | Device Owner 接收器（阶段 4-B 加 onEnabled/onDisabled 回调） |
 | `app/src/main/java/com/sleepshift/SleepShiftApplication.kt` | Application 单例容器，持有 `SettingsRepository` |
 | `app/src/main/java/com/sleepshift/MainActivity.kt` | 入口 Activity，`viewModels` 注入 Repository 工厂 |
 | `app/src/main/java/com/sleepshift/ui/SleepShiftApp.kt` | 底部导航壳（三页状态式切换） |
@@ -89,7 +95,9 @@
 | `app/src/main/java/com/sleepshift/ui/components/CurrentTime.kt` | 每秒刷新时钟 |
 | `app/src/main/java/com/sleepshift/model/SleepShiftModels.kt` | **v2 数据模型**：SleepShiftSettings / SchedulerState / NightWindow / 默认值 / 校验 / `buildShiftTimeZoneId` |
 | `app/src/main/java/com/sleepshift/strategy/OffsetStrategy.kt` | **偏移策略引擎**：FIXED / GRADUAL / FLUCTUATION |
-| `app/src/main/java/com/sleepshift/data/SettingsRepository.kt` | **Preferences DataStore 仓库**（分层存储 + 原始时区写保护） |
+| `app/src/main/java/com/sleepshift/data/SettingsRepository.kt` | **Preferences DataStore 仓库**（分层存储 + 原始时区写保护 + settingsVersion） |
+| `app/src/main/java/com/sleepshift/time/TimezoneScheduler.kt` | **调度核心**：planNight 纯计算 + 策略接入 + 状态 + 精确闹钟武装（零硬编码） |
+| `app/src/test/java/com/sleepshift/time/TimezoneSchedulerTest.kt` | JVM 单测：epoch/时区 ID/渐进策略（5 例全过） |
 | `app/build.gradle.kts` | AGP 8.13.2 / compileSdk 36 / minSdk 26 / Compose / Java 17 / + datastore |
 | `gradle/libs.versions.toml` | 版本目录；BOM 锁定 `2025.08.00`；+ datastore 1.1.1 |
 | `settings.gradle.kts` | 阿里云 maven 镜像加速（官方源兜底） |
@@ -104,11 +112,10 @@
 | 1 | 数据模型（Settings + DataStore + 策略引擎） | ✅ 完成 |
 | 2 | Compose UI（导航 + Wheel Picker + 滑动条 + 实时预览，内存假数据） | ✅ 完成 |
 | 3 | 配置保存（UI → ViewModel → Repository → DataStore 全链路 + 模拟器重启验证） | ✅ 完成 |
-| 4 | **Scheduler 重构**（原始时区、epoch 计算、动态 GMT±HH:MM、武装/取消、策略推进） | ⏳ 当前 |
-| 4 | Scheduler 重构（原始时区保存、epoch 计算、动态 GMT±HH:MM、武装/取消、策略状态推进 + 防重复武装标记） | 待做 |
-| 5 | Receiver 适配（AlarmReceiver extra 传参 + 重新武装；BootReceiver 重启重注册；DeviceAdminReceiver 接 Scheduler） | 待做 |
-| 6 | DPM 接入（`setTimeZone` 动态 ID + 防御校验；**Debug 测试入口：立即偏移/立即恢复**，UI 按钮 + adb 广播） | 待做 |
-| 7 | 模拟器端到端测试（三模式各验证一晚、重启持久性、边界） | 待做 |
+| 4-A | TimezoneScheduler 核心（纯计算 / 策略接入 / 状态 / 闹钟武装，零硬编码） | ✅ 完成 |
+| 4-B | **Receiver 适配**（AlarmReceiver / BootReceiver / DeviceAdminReceiver 回调） | ⏳ 当前 |
+| 5 | DPM 接入（`setTimeZone` 动态 ID + 防御校验；**Debug 测试入口：立即偏移/立即恢复**） | 待做 |
+| 6 | 模拟器端到端测试（三模式各验证一晚、重启持久性、边界） | 待做 |
 
 ## 下次继续开发时需要注意的事项
 
@@ -122,3 +129,4 @@
 - **DataStore**：`originalTimezoneId` 仅在首次启用写入（写保护）；策略状态字段仅 Scheduler 写、UI 只读。
 - **DO 应用 force-stop 受限**：`am force-stop` 杀不掉 Device Owner 应用进程，App 重启/持久化验证用 `adb reboot`（更严格的验证方式）。
 - **模拟器当前残留配置**：`enabled=true`、`offsetMin=45` 已持久化（阶段 3 验证产物），后续测试注意。
+- **JVM 单测**：`JAVA_HOME='D:\AndroidDev\JDK\jdk-21.0.12.8' ./gradlew.bat testDebugUnitTest`（纯计算验证，不依赖模拟器/真实时间）。

@@ -90,3 +90,16 @@
   - 等待启动：`adb wait-for-device shell 'while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 2; done'`
   - UI 检查：`adb exec-out uiautomator dump /dev/tty`
   - 数据文件：`adb shell run-as com.sleepshift ls -la files/datastore/`（debug 可 run-as）
+
+### 9. 阶段 4-A：TimezoneScheduler 核心
+
+- **日期**：2026-08-19
+- **改动**：新增 `com.sleepshift.time.TimezoneScheduler`（零硬编码），纯计算 `planNight`/`computeNextShiftEpoch`/`computeRestoreEpoch`/`buildShiftZoneId`；接入 FIXED/GRADUAL/FLUCTUATION；`SchedulerState` 扩展 `armed`/`nextShiftEpoch`/`nextRestoreEpoch`；Manifest 加 `SCHEDULE_EXACT_ALARM`；新增 JVM 单测（5 例）。
+- **关键决策与修复**：
+  1. **恢复时刻 = 开始时刻 + realWindowMin**（真实窗口 = 夜间显示时长 − **当晚实际偏移**）。注意不能用 `settings.offsetMin` 算 realWindow——GRADUAL/FLUCTUATION 下当晚偏移来自策略结果，必须用策略推进后的值。
+  2. **`strategyFor` 必须放 companion**：`planNight` 在伴生对象内，Kotlin 不允许伴生对象访问实例方法，否则级联类型推断错误（表现为 `advancedState` 被推断为 `Map.Entry` 的诡异报错）。
+  3. **`buildShiftTimeZoneId` 小时位补零**：`GMT+8:00` → `GMT+08:00`，格式统一（`GMT±HH:MM`）。
+  4. **PendingIntent 用 `setClassName(packageName, "com.sleepshift.AlarmReceiver")` 字符串定位**：阶段 4-A 无需 Receiver 类即可编译；阶段 4-B 创建同名 Receiver 注册后即生效，无需改 Scheduler。
+  5. **`armedEpochDay` 防重复推进**：同一晚重复武装时复用 `currentOffsetMin`，不再次推进策略进度。
+- **验证**：`testDebugUnitTest` 5/5 通过（22:30/06:30/+120 → shift=8/19 22:30、restore=8/20 04:30、动态时区 GMT+10:00/+10:15/+11:00、渐进 30→60→90→120、未启用返回 invalid）。
+- **注意**：PendingIntent 的 extra（zone_id）在 AlarmReceiver 触发时读取；取消时用相同 action+requestCode（extra 不参与 PendingIntent 身份比较）。

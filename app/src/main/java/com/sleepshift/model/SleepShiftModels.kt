@@ -36,6 +36,12 @@ data class SchedulerState(
     val originalTimezoneId: String = "",
     /** 已武装夜晚的 epochDay（防止同一晚重复推进策略状态） */
     val armedEpochDay: Long = -1L,
+    /** 是否已武装（已安排下一次偏移/恢复闹钟） */
+    val armed: Boolean = false,
+    /** 下次开始偏移时刻（epoch ms）；未武装为 -1 */
+    val nextShiftEpoch: Long = -1L,
+    /** 下次恢复时刻（epoch ms）；未武装为 -1 */
+    val nextRestoreEpoch: Long = -1L,
 )
 
 /**
@@ -76,19 +82,22 @@ const val DEFAULT_OFFSET_MIN = 120
 const val DEFAULT_GRADUAL_STEP_MIN = 30
 const val DEFAULT_FLUCTUATION_RANGE_MIN = 30
 
+/** 夜间显示时长（分钟）：恢复时间与开始时间之差，跨天取模到 [0,1440) */
+fun nightLengthMin(startTimeMin: Int, restoreTimeMin: Int): Int =
+    ((restoreTimeMin - startTimeMin) % MINUTES_PER_DAY + MINUTES_PER_DAY) % MINUTES_PER_DAY
+
 /** 计算睡眠窗口；配置非法（夜间时长过短/过长，或偏移不小于夜间时长）返回 null */
 fun computeNightWindow(settings: SleepShiftSettings): NightWindow? {
     val offset = settings.offsetMin.coerceIn(MIN_OFFSET_MIN, MAX_OFFSET_MIN)
-    val nightLengthMin =
-        ((settings.restoreTimeMin - settings.startTimeMin) % MINUTES_PER_DAY + MINUTES_PER_DAY) % MINUTES_PER_DAY
-    if (nightLengthMin < MIN_NIGHT_LENGTH_MIN || nightLengthMin > MAX_NIGHT_LENGTH_MIN) return null
-    if (offset >= nightLengthMin) return null
+    val nightLen = nightLengthMin(settings.startTimeMin, settings.restoreTimeMin)
+    if (nightLen < MIN_NIGHT_LENGTH_MIN || nightLen > MAX_NIGHT_LENGTH_MIN) return null
+    if (offset >= nightLen) return null
     return NightWindow(
         startTimeMin = settings.startTimeMin,
         restoreTimeMin = settings.restoreTimeMin,
         offsetMin = offset,
-        nightLengthMin = nightLengthMin,
-        realWindowMin = nightLengthMin - offset,
+        nightLengthMin = nightLen,
+        realWindowMin = nightLen - offset,
     )
 }
 
@@ -101,5 +110,5 @@ fun buildShiftTimeZoneId(originalOffsetMillis: Int, offsetMin: Int): String {
     val sign = if (totalMinutes < 0) "-" else "+"
     val hh = abs(totalMinutes) / 60
     val mm = abs(totalMinutes) % 60
-    return "GMT$sign$hh:${mm.toString().padStart(2, '0')}"
+    return "GMT$sign${hh.toString().padStart(2, '0')}:${mm.toString().padStart(2, '0')}"
 }

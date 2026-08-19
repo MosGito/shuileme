@@ -1,0 +1,199 @@
+package com.sleepshift.time
+
+import android.app.AlarmManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.util.Log
+import com.sleepshift.data.SettingsRepository
+import com.sleepshift.model.MAX_NIGHT_LENGTH_MIN
+import com.sleepshift.model.MIN_NIGHT_LENGTH_MIN
+import com.sleepshift.model.SchedulerState
+import com.sleepshift.model.SleepShiftMode
+import com.sleepshift.model.SleepShiftSettings
+import com.sleepshift.model.buildShiftTimeZoneId
+import com.sleepshift.model.nightLengthMin
+import com.sleepshift.strategy.FixedStrategy
+import com.sleepshift.strategy.FluctuationStrategy
+import com.sleepshift.strategy.GradualStrategy
+import com.sleepshift.strategy.OffsetStrategy
+import java.time.Instant
+import java.time.ZoneId
+import java.util.TimeZone
+import kotlinx.coroutines.flow.first
+
+/**
+ * 时区调度核心（阶段 4-A）。
+ *
+ * - 所有时间/偏移均来自 [SleepShiftSettings]，无任何硬编码；
+ * - 恢复时刻 = 开始时刻 + realWindowMin（真实窗口 = 夜间显示时长 − 当晚实际偏移），
+ *   即"系统显示时间达到恢复时间"那一刻（如 +120min：真实 04:30 恢复，显示 06:30）；
+ * - 动态时区 ID：`buildShiftTimeZoneId` → `GMT±HH:MM`（15 分钟步进）；
+ * - 每晚经 [OffsetStrategy] 推进实际偏移，`armedEpochDay` 防止同一晚重复推进。
+ *
+ * AlarmReceiver/BootReceiver 在阶段 5 接入；DPM.setTimeZone 在阶段 6 接入。
+ */
+class TimezoneScheduler(
+    private val context: Context,
+    private val repository: SettingsRepository,
+) {
+
+    /** 读取当前配置并武装下一次完整夜晚（偏移/恢复各一个精确闹钟） */
+    suspend fun arm() {
+        val settings = repository.settings.first()
+        val state = repository.schedulerState.first()
+        val originalZoneId = currentOriginalZoneId(state)
+        val planned = planNight(settings, state, System.currentTimeMillis(), originalZoneId)
+        if (!planned.valid) {
+            Log.w(TAG, "arm: 配置无效或未启用，取消武装")
+            cancel()
+            return
+        }
+        repository.updateSchedulerState { planned.state }
+        scheduleAlarms(planned.shiftEpoch, planned.restoreEpoch, planned.shiftZoneId, originalZoneId)
+        Log.i(
+            TAG,
+            "arm: offset=${planned.offsetMin}, shift=${
+                Instant.ofEpochMilli(planned.shiftEpoch)
+            }, restore=${Instant.ofEpochMilli(planned.restoreEpoch)}, zone=${planned.shiftZoneId}"
+        )
+    }
+
+    /** 取消武装并清空调度状态 */
+    suspend fun cancel() {
+        val alarmManager = context.getSystemService(AlarmManager::class.java)
+        alarmManager.cancel(shiftPendingIntent(emptyMap()))
+        alarmManager.cancel(restorePendingIntent(emptyMap()))
+        repository.updateSchedulerState {
+            it.copy(armed = false, nextShiftEpoch = -1L, nextRestoreEpoch = -1L)
+        }
+        Log.i(TAG, "cancel: 闹钟已清除")
+    }
+
+    private suspend fun currentOriginalZoneId(state: SchedulerState): String =
+        state.originalTimezoneId.ifEmpty { TimeZone.getDefault().id }
+
+    private fun scheduleAlarms(shiftEpoch: Long, restoreEpoch: Long, shiftZoneId: String, originalZoneId: String) {
+        val alarmManager = context.getSystemService(AlarmManager::class.java)
+        alarmManager.setExactAndAllowWhileIdle(
+            AlarmManager.RTC_WAKEUP, shiftEpoch,
+            shiftPendingIntent(mapOf(EXTRA_ZONE_ID to shiftZoneId)),
+        )
+        alarmManager.setExactAndAllowWhileIdle(
+            AlarmManager.RTC_WAKEUP, restoreEpoch,
+            restorePendingIntent(mapOf(EXTRA_ZONE_ID to originalZoneId)),
+        )
+    }
+
+    private fun shiftPendingIntent(extras: Map<String, String>): PendingIntent =
+        pendingIntent(ACTION_SHIFT, REQUEST_CODE_SHIFT, extras)
+
+    private fun restorePendingIntent(extras: Map<String, String>): PendingIntent =
+        pendingIntent(ACTION_RESTORE, REQUEST_CODE_RESTORE, extras)
+
+    /** PendingIntent 目标为 [RECEIVER_CLASS_NAME]（阶段 5 创建同名 Receiver 并注册后即生效） */
+    private fun pendingIntent(action: String, requestCode: Int, extras: Map<String, String>): PendingIntent {
+        val intent = Intent()
+            .setClassName(context.packageName, RECEIVER_CLASS_NAME)
+            .setAction(action)
+        extras.forEach { (k, v) -> intent.putExtra(k, v) }
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        return PendingIntent.getBroadcast(context, requestCode, intent, flags)
+    }
+
+    companion object {
+        private const val TAG = "TimezoneScheduler"
+
+        const val ACTION_SHIFT = "com.sleepshift.action.SHIFT"
+        const val ACTION_RESTORE = "com.sleepshift.action.RESTORE"
+        const val EXTRA_ZONE_ID = "zone_id"
+
+        /** AlarmReceiver 完整类名（阶段 5 创建同名 Receiver 后即生效） */
+        const val RECEIVER_CLASS_NAME = "com.sleepshift.AlarmReceiver"
+
+        private const val REQUEST_CODE_SHIFT = 100
+        private const val REQUEST_CODE_RESTORE = 200
+        private const val DAY_MS = 86_400_000L
+
+        private fun strategyFor(mode: SleepShiftMode): OffsetStrategy = when (mode) {
+            SleepShiftMode.FIXED -> FixedStrategy
+            SleepShiftMode.GRADUAL -> GradualStrategy
+            SleepShiftMode.FLUCTUATION -> FluctuationStrategy()
+        }
+
+        /**
+         * 规划下一次完整夜晚（纯函数，JVM 可单测）。
+         * 同一晚只推进一次策略状态；重复武装同夜复用当前偏移。
+         */
+        fun planNight(
+            settings: SleepShiftSettings,
+            state: SchedulerState,
+            nowEpochMillis: Long,
+            originalZoneId: String,
+        ): PlannedNight {
+            val nightLen = nightLengthMin(settings.startTimeMin, settings.restoreTimeMin)
+            if (!settings.enabled || nightLen < MIN_NIGHT_LENGTH_MIN || nightLen > MAX_NIGHT_LENGTH_MIN) {
+                return PlannedNight.invalid()
+            }
+            val shiftEpoch = computeNextShiftEpoch(settings.startTimeMin, originalZoneId, nowEpochMillis)
+            val nightEpochDay = shiftEpoch / DAY_MS
+            val (offset, advancedState) = if (nightEpochDay != state.armedEpochDay) {
+                val result = strategyFor(settings.mode).next(settings, state)
+                result.offsetMin to result.state
+            } else {
+                state.currentOffsetMin to state
+            }
+            val realWindow = nightLen - offset
+            if (realWindow <= 0) return PlannedNight.invalid()
+
+            val restoreEpoch = computeRestoreEpoch(shiftEpoch, realWindow)
+            val armedState = advancedState.copy(
+                originalTimezoneId = originalZoneId,
+                currentOffsetMin = offset,
+                armedEpochDay = nightEpochDay,
+                armed = true,
+                nextShiftEpoch = shiftEpoch,
+                nextRestoreEpoch = restoreEpoch,
+            )
+            return PlannedNight(
+                valid = true,
+                offsetMin = offset,
+                state = armedState,
+                shiftEpoch = shiftEpoch,
+                restoreEpoch = restoreEpoch,
+                shiftZoneId = buildShiftZoneId(originalZoneId, offset),
+            )
+        }
+
+        /** 下一次开始偏移时刻：原始时区中 startTime 的下一次出现 */
+        fun computeNextShiftEpoch(startTimeMin: Int, originalZoneId: String, nowEpochMillis: Long): Long {
+            val zone = ZoneId.of(originalZoneId)
+            val now = Instant.ofEpochMilli(nowEpochMillis).atZone(zone)
+            var candidate = now.toLocalDate().atTime(startTimeMin / 60, startTimeMin % 60).atZone(zone)
+            if (!candidate.isAfter(now)) candidate = candidate.plusDays(1)
+            return candidate.toInstant().toEpochMilli()
+        }
+
+        /** 恢复时刻：开始时刻 + 真实窗口（分钟） */
+        fun computeRestoreEpoch(shiftEpochMillis: Long, realWindowMin: Int): Long =
+            shiftEpochMillis + realWindowMin * 60_000L
+
+        /** 动态偏移时区 ID：原始 UTC 偏移 + 偏移分钟 → GMT±HH:MM */
+        fun buildShiftZoneId(originalZoneId: String, offsetMin: Int): String =
+            buildShiftTimeZoneId(TimeZone.getTimeZone(originalZoneId).rawOffset, offsetMin)
+    }
+}
+
+/** 一次完整夜晚的调度规划结果 */
+data class PlannedNight(
+    val valid: Boolean,
+    val offsetMin: Int = 0,
+    val state: SchedulerState = SchedulerState(),
+    val shiftEpoch: Long = -1L,
+    val restoreEpoch: Long = -1L,
+    val shiftZoneId: String = "",
+) {
+    companion object {
+        fun invalid() = PlannedNight(valid = false)
+    }
+}

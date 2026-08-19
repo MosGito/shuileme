@@ -52,6 +52,9 @@ class SettingsRepository(context: Context) {
         val CURRENT_OFFSET_MIN = intPreferencesKey("current_offset_min")
         val ORIGINAL_TIMEZONE_ID = stringPreferencesKey("original_timezone_id")
         val ARMED_EPOCH_DAY = longPreferencesKey("armed_epoch_day")
+        val ARMED = booleanPreferencesKey("armed")
+        val NEXT_SHIFT_EPOCH = longPreferencesKey("next_shift_epoch")
+        val NEXT_RESTORE_EPOCH = longPreferencesKey("next_restore_epoch")
     }
 
     /** 用户配置流 */
@@ -86,6 +89,9 @@ class SettingsRepository(context: Context) {
             prefs[Keys.FLUCTUATION_PREV_OFFSET_MIN] = next.fluctuationPrevOffsetMin
             prefs[Keys.CURRENT_OFFSET_MIN] = next.currentOffsetMin
             prefs[Keys.ARMED_EPOCH_DAY] = next.armedEpochDay
+            prefs[Keys.ARMED] = next.armed
+            prefs[Keys.NEXT_SHIFT_EPOCH] = next.nextShiftEpoch
+            prefs[Keys.NEXT_RESTORE_EPOCH] = next.nextRestoreEpoch
             // 原始时区写保护：仅在首次写入
             if (next.originalTimezoneId.isNotEmpty() && current.originalTimezoneId.isEmpty()) {
                 prefs[Keys.ORIGINAL_TIMEZONE_ID] = next.originalTimezoneId
@@ -124,5 +130,8 @@ class SettingsRepository(context: Context) {
         currentOffsetMin = this[Keys.CURRENT_OFFSET_MIN] ?: 0,
         originalTimezoneId = this[Keys.ORIGINAL_TIMEZONE_ID] ?: "",
         armedEpochDay = this[Keys.ARMED_EPOCH_DAY] ?: -1L,
+        armed = this[Keys.ARMED] ?: false,
+        nextShiftEpoch = this[Keys.NEXT_SHIFT_EPOCH] ?: -1L,
+        nextRestoreEpoch = this[Keys.NEXT_RESTORE_EPOCH] ?: -1L,
     )
 }

@@ -2,6 +2,7 @@ package com.sleepshift
 
 import android.app.Application
 import com.sleepshift.data.SettingsRepository
+import com.sleepshift.time.TimezoneScheduler
 
 /**
  * 应用级单例容器。
@@ -11,4 +12,6 @@ import com.sleepshift.data.SettingsRepository
 class SleepShiftApplication : Application() {
 
     val settingsRepository: SettingsRepository by lazy { SettingsRepository(this) }
+
+    val timezoneScheduler: TimezoneScheduler by lazy { TimezoneScheduler(this, settingsRepository) }
 }
