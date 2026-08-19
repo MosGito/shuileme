@@ -30,6 +30,7 @@ import com.sleepshift.model.SchedulerState
 import com.sleepshift.model.SleepShiftMode
 import com.sleepshift.model.SleepShiftSettings
 import com.sleepshift.strategy.GradualStrategy
+import com.sleepshift.ui.formatOffsetFriendly
 import com.sleepshift.ui.SettingsViewModel
 import kotlin.math.roundToInt
 
@@ -48,29 +49,44 @@ fun ModeScreen(viewModel: SettingsViewModel) {
 
         ModeCard(
             title = "固定模式",
-            desc = "每晚固定偏移相同时长，适合稳定规律作息。",
+            desc = "每晚固定提前相同时长。",
             selected = settings.mode == SleepShiftMode.FIXED,
             onSelect = { viewModel.setMode(SleepShiftMode.FIXED) },
         ) {
-            Text("每晚固定偏移 +${settings.offsetMin} 分钟")
+            Text("每晚固定提前 ${formatOffsetFriendly(settings.offsetMin)}")
+            Text(
+                text = "适合：作息规律，想要稳定睡眠暗示的人",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         ModeCard(
             title = "渐进模式",
-            desc = "每天逐步增加偏移，逐渐养成早睡习惯。",
+            desc = "每晚逐渐增加提前量，让身体慢慢适应。",
             selected = settings.mode == SleepShiftMode.GRADUAL,
             onSelect = { viewModel.setMode(SleepShiftMode.GRADUAL) },
         ) {
             GradualContent(settings = settings, onStepChange = viewModel::setGradualStepMin)
+            Text(
+                text = "适合：想循序渐进调整作息的人",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         ModeCard(
             title = "自然波动",
-            desc = "在目标偏移附近小幅波动，减少机械感。",
+            desc = "每晚在目标附近自然波动，减少机械感。",
             selected = settings.mode == SleepShiftMode.FLUCTUATION,
             onSelect = { viewModel.setMode(SleepShiftMode.FLUCTUATION) },
         ) {
             FluctuationContent(settings = settings, onRangeChange = viewModel::setFluctuationRangeMin)
+            Text(
+                text = "适合：已养成习惯，希望更自然不刻意的人",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

@@ -8,6 +8,7 @@ import android.os.Build
 import android.util.Log
 import com.sleepshift.admin.DeviceOwner
 import com.sleepshift.data.SettingsRepository
+import com.sleepshift.notify.NotificationHelper
 import com.sleepshift.model.MAX_NIGHT_LENGTH_MIN
 import com.sleepshift.model.MIN_NIGHT_LENGTH_MIN
 import com.sleepshift.model.SchedulerState
@@ -107,6 +108,7 @@ class TimezoneScheduler(
         }
         val ok = DeviceOwner.setTimeZone(context, zone)
         Log.i(TAG, "applyShift: setTimeZone($zone) ok=$ok")
+        if (ok) NotificationHelper.notifySleepModeStarted(context)
     }
 
     /** 执行恢复：读取 DataStore 原始时区并 setTimeZone */
@@ -119,6 +121,7 @@ class TimezoneScheduler(
         }
         val ok = DeviceOwner.setTimeZone(context, originalZoneId)
         Log.i(TAG, "applyRestore: zone=$originalZoneId ok=$ok")
+        if (ok) NotificationHelper.notifyTimeRestored(context)
     }
 
     /**

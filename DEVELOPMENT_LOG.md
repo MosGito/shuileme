@@ -150,3 +150,16 @@
 - **adb 测试命令备忘**：
   - `TEST_FORCE_ADVANCE`：模拟新一晚，策略按日推进（GRADUAL/FLUCTUATION 验证）
   - `TEST_ACTIVE_RESTORE`：模拟偏移状态启动，触发当前窗口恢复闹钟兜底
+
+### 13. 阶段 6：产品化 UI 与用户体验优化
+
+- **日期**：2026-08-20
+- **改动**（未重构 Scheduler/Receiver/DataStore）：
+  - **首次启动引导** `OnboardingScreen`：3 步（理念介绍 → 能力检查 → 就绪+通知授权）。能力检查用普通语言（"系统时间控制权限"代替 Device Owner 等术语）。`onboardingDone` 为 DataStore 追加键（应用级状态，不混入用户配置）。
+  - **今日主页**：状态「正常时间/睡眠模式」、今晚计划卡片（开始/提前/恢复）、关闭确认弹窗（"关闭后手机时间将恢复正常"）。
+  - **配置页**：实时解释文本 + 睡眠模式中修改 Snackbar 提示（"修改将在下一周期生效"）。
+  - **模式页**：普通语言说明 + 适合人群。
+  - **通知** `NotificationHelper`：IMPORTANCE_LOW 非侵入式；`applyShift/applyRestore` 成功后发送（仅成功时，不打扰）。
+- **验证**：模拟器全流程——引导三步完成进入主界面、引导持久化（重启不再显示）、主页状态/计划卡/关闭弹窗、配置解释文本、模式说明+适合人群、SHIFT/RESTORE 通知 ✅；单测 12/12。
+- **小坑**：引导 Step 3 通知授权按钮的 `notificationGranted` 初始状态需查真实权限（`ContextCompat.checkSelfPermission`），否则已授权也显示按钮；Compose 局部变量引用顺序（context 声明在状态初始化之前）。
+- **未在模拟器验证**：配置页"睡眠模式中修改"Snackbar——需处于活动睡眠窗口（当前模拟器时间不在窗口内），逻辑简单已代码确认。

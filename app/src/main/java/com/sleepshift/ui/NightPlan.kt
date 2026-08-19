@@ -5,6 +5,23 @@ import com.sleepshift.model.SleepShiftSettings
 import com.sleepshift.model.computeNightWindow
 import java.time.LocalDateTime
 import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+
+private val TIME_FMT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+/** 友好偏移文案：120 → "2 小时"；0 → "不提前" */
+fun formatOffsetFriendly(minutes: Int): String = when {
+    minutes <= 0 -> "不提前"
+    minutes % 60 == 0 -> "${minutes / 60} 小时"
+    else -> "$minutes 分钟"
+}
+
+/** 配置页实时解释文案（无需理解时区）："今晚 22:30 开始，手机时间会提前 2 小时" */
+fun configExplanation(plan: NightPlan): String {
+    if (!plan.valid) return "请先检查开始与恢复时间的设置"
+    val start = plan.startReal?.format(TIME_FMT) ?: return ""
+    return "今晚 $start 开始，手机时间会提前 ${formatOffsetFriendly(plan.offsetMin)}"
+}
 
 /** 今晚/当前睡眠窗口的展示用推算（阶段 2 UI 预览；阶段 4 起由 Scheduler 提供真实状态） */
 data class NightPlan(

@@ -31,6 +31,18 @@ class SettingsViewModel(
             initialValue = SleepShiftSettings(),
         )
 
+    /** 首次启动引导是否已完成 */
+    val onboardingDone: StateFlow<Boolean> = repository.onboardingDone
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = false,
+        )
+
+    fun setOnboardingDone(done: Boolean) {
+        viewModelScope.launch { repository.setOnboardingDone(done) }
+    }
+
     /** 配置变更：写入 DataStore 并重新武装（未启用时 arm() 内部会 cancel） */
     fun updateSettings(transform: (SleepShiftSettings) -> SleepShiftSettings) {
         viewModelScope.launch {

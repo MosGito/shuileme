@@ -56,6 +56,7 @@ class SettingsRepository(context: Context) {
         val GRADUAL_STEP_MIN = intPreferencesKey("gradual_step_min")
         val FLUCTUATION_RANGE_MIN = intPreferencesKey("fluctuation_range_min")
         val SETTINGS_VERSION = intPreferencesKey("settings_version")
+        val ONBOARDING_DONE = booleanPreferencesKey("onboarding_done")
         // 内部运行时状态（仅 Scheduler 写入）
         val GRADUAL_PROGRESS_DAYS = intPreferencesKey("gradual_progress_days")
         val FLUCTUATION_PREV_OFFSET_MIN = intPreferencesKey("fluctuation_prev_offset_min")
@@ -75,6 +76,15 @@ class SettingsRepository(context: Context) {
 
     /** 配置结构版本流 */
     val settingsVersion: Flow<Int> = dataStore.data.map { it[Keys.SETTINGS_VERSION] ?: 0 }
+
+    /** 首次启动引导是否已完成（应用级状态，非用户配置） */
+    val onboardingDone: Flow<Boolean> = dataStore.data.map { it[Keys.ONBOARDING_DONE] ?: false }
+
+    suspend fun setOnboardingDone(done: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[Keys.ONBOARDING_DONE] = done
+        }
+    }
 
     suspend fun updateSettings(transform: (SleepShiftSettings) -> SleepShiftSettings) {
         dataStore.edit { prefs ->

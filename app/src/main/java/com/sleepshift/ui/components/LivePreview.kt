@@ -13,13 +13,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.sleepshift.ui.formatOffsetFriendly
 import java.time.format.DateTimeFormatter
 
 private val TIME_FMT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 /**
  * 实时效果预览（核心体验组件）：
- * 真实时间 → 偏移 → 显示时间，让用户立即理解"我的手机时间会被提前多少"。
+ * 真实时间 → 提前 → 手机显示，让用户立即理解"手机时间会提前多少"。
  */
 @Composable
 fun LivePreview(offsetMin: Int, modifier: Modifier = Modifier) {
@@ -31,8 +32,8 @@ fun LivePreview(offsetMin: Int, modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             PreviewRow(label = "真实时间", value = now.format(TIME_FMT))
-            PreviewRow(label = "偏  移", value = "+$offsetMin 分钟")
-            PreviewRow(label = "显示时间", value = shifted.format(TIME_FMT), emphasized = true)
+            PreviewRow(label = "提前", value = formatOffsetFriendly(offsetMin))
+            PreviewRow(label = "手机显示", value = shifted.format(TIME_FMT), emphasized = true)
         }
     }
 }

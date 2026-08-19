@@ -13,6 +13,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -22,6 +23,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import com.sleepshift.ui.config.ConfigScreen
 import com.sleepshift.ui.home.HomeScreen
 import com.sleepshift.ui.mode.ModeScreen
+import com.sleepshift.ui.onboarding.OnboardingScreen
 
 private enum class AppTab(val label: String, val icon: ImageVector) {
     HOME("今日", Icons.Filled.Home),
@@ -29,9 +31,19 @@ private enum class AppTab(val label: String, val icon: ImageVector) {
     MODE("模式", Icons.Filled.DateRange),
 }
 
-/** 应用壳：底部导航 + 三页切换（阶段 2 用状态式导航，后续如需深链/回退栈再加 navigation-compose） */
+/** 应用壳：首次启动引导 + 底部导航三页（阶段 2 用状态式导航） */
 @Composable
 fun SleepShiftApp(viewModel: SettingsViewModel) {
+    val onboardingDone by viewModel.onboardingDone.collectAsState()
+    if (!onboardingDone) {
+        OnboardingScreen(onFinish = { viewModel.setOnboardingDone(true) })
+        return
+    }
+    MainTabs(viewModel)
+}
+
+@Composable
+private fun MainTabs(viewModel: SettingsViewModel) {
     var currentTab by rememberSaveable { mutableStateOf(AppTab.HOME) }
 
     Scaffold(

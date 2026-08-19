@@ -77,13 +77,21 @@
   - **边界-改配置**：改偏移自动重新武装 ✅（**修复**：原缺失，旧闹钟会在旧时刻按旧配置执行）
   - **边界-启用晚于开始时间**：单测覆盖跨天 ✅
   - **修复清单**：VM 联动 arm / cancel+restore；FLUCTUATION 取整偏差（OFFSET_STEP_HALF 7→30）；ensureActiveWindowRestore 纯函数化
+- [x] **阶段 6：产品化 UI 与用户体验优化**（`assembleDebug` ✅ + 模拟器验证 ✅）
+  - **首次启动引导**（3 步，普通语言）：理念介绍 → 能力检查（系统时间控制权限 / 自动时间 / 精确闹钟）→ 就绪 + 通知授权；`onboardingDone` 持久化（重启不重复显示）
+  - **今日主页**：状态「正常时间 / 睡眠模式」；真实时间 → 手机显示（友好文案「2 小时」）；今晚计划卡片（开始/提前/恢复）；关闭确认弹窗「关闭后手机时间将恢复正常」
+  - **配置页**：实时解释文本「今晚 22:30 开始，手机时间会提前 2 小时」；睡眠模式中修改提示「修改将在下一周期生效」（Snackbar）
+  - **模式页**：三种模式普通语言说明 + 适合人群
+  - **通知**：非侵入式（IMPORTANCE_LOW、无声音震动）「睡眠模式已启动 / 正常时间已恢复」，触发 SHIFT/RESTORE 时发送
+  - 约束遵守：**未重构 Scheduler/Receiver/DataStore**；仅新增 onboarding 标志（DataStore 追加键）+ 通知侧调用
 
 ## 当前开发阶段
 
-**项目功能已完成**（阶段 5 收尾，按用户指示不进入 UI 优化/发布阶段）
+**项目已产品化**（阶段 6 收尾）
 
-- 功能链路全部验证通过（三模式 / 重启 / 边界）
-- 待定：后续方向（发布准备 / 真机验证 / UI 增强）由用户决定
+- 引导 / 主页 / 配置 / 模式 / 通知 / 安全确认全部就绪并验证
+- 按用户指示不进入发布阶段
+- 待定：发布准备（签名 / release 构建）、真机验证、后续迭代
 
 ## 遇到的问题
 
@@ -122,6 +130,9 @@
 | `app/src/main/java/com/sleepshift/AlarmReceiver.kt` | 精确闹钟接收器：SHIFT/RESTORE + Debug 测试入口（goAsync + 协程） |
 | `app/src/main/java/com/sleepshift/BootReceiver.kt` | 开机/更新后重新武装 + 偏移窗口恢复兜底 |
 | `app/src/main/java/com/sleepshift/admin/DeviceOwner.kt` | DPM.setTimeZone 封装（DO 校验 + 自动关自动时区） |
+| `app/src/main/java/com/sleepshift/notify/NotificationHelper.kt` | 非侵入式通知（睡眠模式启动/恢复） |
+| `app/src/main/java/com/sleepshift/AppCapabilities.kt` | 能力状态检查（引导页用，普通语言呈现） |
+| `app/src/main/java/com/sleepshift/ui/onboarding/OnboardingScreen.kt` | 首次启动引导（3 步 + 状态检查 + 通知授权） |
 | `app/build.gradle.kts` | AGP 8.13.2 / compileSdk 36 / minSdk 26 / Compose / Java 17 / + datastore |
 | `gradle/libs.versions.toml` | 版本目录；BOM 锁定 `2025.08.00`；+ datastore 1.1.1 |
 | `settings.gradle.kts` | 阿里云 maven 镜像加速（官方源兜底） |
@@ -140,6 +151,7 @@
 | 4-B | Receiver 适配 + DPM 接入 + adb 测试入口 | ✅ 完成 |
 | 4-C | 偏移粒度约束为整小时（settingsVersion v2 迁移） | ✅ 完成 |
 | 5 | 模拟器端到端验证（三模式 / 重启 / 边界，含修复） | ✅ 完成 |
+| 6 | 产品化 UI 与用户体验（引导 / 主页 / 配置 / 模式 / 通知 / 安全确认） | ✅ 完成 |
 
 ## 下次继续开发时需要注意的事项
 
@@ -159,3 +171,4 @@
 - **⚠️ SCHEDULE_EXACT_ALARM 需授权**：Manifest 声明不自动授予（DO 也非豁免）；模拟器需 `adb shell appops set com.sleepshift SCHEDULE_EXACT_ALARM allow`；`scheduleAlarms` 已加 `setAlarmClock` 回退（无权限时兜底）。
 - **模拟器当前残留状态**：`enabled=true`、`offsetMin=120`（阶段 4-C 滑条验证产物）、已武装、时区已恢复 GMT。
 - **JVM 单测**：`JAVA_HOME='D:\AndroidDev\JDK\jdk-21.0.12.8' ./gradlew.bat testDebugUnitTest`（纯计算验证，不依赖模拟器/真实时间）。
+- **POST_NOTIFICATIONS**：API 33+ 需运行时授权；引导页 Step 3 提供授权入口；模拟器也可 `adb shell pm grant com.sleepshift android.permission.POST_NOTIFICATIONS`。
