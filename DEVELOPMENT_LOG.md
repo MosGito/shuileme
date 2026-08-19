@@ -103,3 +103,24 @@
   5. **`armedEpochDay` 防重复推进**：同一晚重复武装时复用 `currentOffsetMin`，不再次推进策略进度。
 - **验证**：`testDebugUnitTest` 5/5 通过（22:30/06:30/+120 → shift=8/19 22:30、restore=8/20 04:30、动态时区 GMT+10:00/+10:15/+11:00、渐进 30→60→90→120、未启用返回 invalid）。
 - **注意**：PendingIntent 的 extra（zone_id）在 AlarmReceiver 触发时读取；取消时用相同 action+requestCode（extra 不参与 PendingIntent 身份比较）。
+
+### 10. 阶段 4-B：Receiver 适配（含重大平台发现）
+
+- **日期**：2026-08-19
+- **改动**：新增 `AlarmReceiver`（SHIFT/RESTORE + TEST_ARM/TEST_CANCEL/TEST_SET_ZONE，goAsync+协程+15s 超时，执行后重新 arm）、`BootReceiver`（BOOT_COMPLETED/MY_PACKAGE_REPLACED，`ensureActiveWindowRestore` 处理偏移状态重启）、`DeviceAdminReceiver`（onEnabled→arm / onDisabled→cancel）、`DeviceOwner`（DPM.setTimeZone 封装）。
+- **⚠️ 重大平台发现 1：`setTimeZone` 只应用 IANA 时区 ID**（Android 16 / API 36）：
+  - 自定义 `GMT±HH:MM`（含整小时 `GMT+02:00`、无冒号 `GMT+10`、ISO `+08:00`）**全部静默忽略**：返回 true 但时区不变（`persist.sys.timezone` 不变）。
+  - IANA ID（`Asia/Shanghai`、`Etc/GMT-2`）正常生效。
+  - **影响**：v2 的 15 分钟步进偏移（0-180）在本平台无法完整实现——只有整小时总偏移可用。
+  - **对策**：`TimezoneScheduler.buildShiftZoneId` 改为 IANA 感知——整小时总偏移 → `Etc/GMT±H`（POSIX 符号反转，UTC+H → Etc/GMT-H）；分数偏移回退 `GMT±HH:MM`（本平台静默无效，运行时仅告警）。
+- **⚠️ 重大平台发现 2：`AUTO_TIME_ZONE=1` 时 `setTimeZone` 返回 false**：`DeviceOwner.setTimeZone` 已自动关闭（DO 可写 `Settings.Global.AUTO_TIME_ZONE`）。
+- **⚠️ 环境发现 3：`SCHEDULE_EXACT_ALARM` 需授权**：Manifest 声明不自动授予（DO 亦非豁免）；模拟器 `adb shell appops set com.sleepshift SCHEDULE_EXACT_ALARM allow`；`scheduleAlarms` 无权限时回退 `setAlarmClock`（无需权限、Doze 下精确触发）。
+- **修复 4：同一晚重武装 FIXED 偏移重算**：`armedEpochDay` 防重复推进守卫导致"用户改偏移后重武装复用旧偏移"（TEST_ARM 后仍是 45）。改为：同一晚重武装时 FIXED 按当前 `settings.offsetMin` 重算，GRADUAL/FLUCTUATION 保留已推进值。
+- **验证**：单测 7/7；模拟器 adb——`TEST_ARM` → `SHIFT`（+180min → `Etc/GMT-3` → 时区 `+0300`）→ `RESTORE`（GMT → `+0000`）✅。
+- **adb 测试命令**：
+  - `am broadcast -n com.sleepshift/.AlarmReceiver -a com.sleepshift.action.TEST_ARM`
+  - `am broadcast -n com.sleepshift/.AlarmReceiver -a com.sleepshift.action.SHIFT`
+  - `am broadcast -n com.sleepshift/.AlarmReceiver -a com.sleepshift.action.RESTORE`
+  - `am broadcast -n com.sleepshift/.AlarmReceiver -a com.sleepshift.action.TEST_CANCEL`
+  - `am broadcast -n com.sleepshift/.AlarmReceiver -a com.sleepshift.action.TEST_SET_ZONE --es zone_id "Asia/Shanghai"`
+- **待产品决策**：分数偏移（15 分钟步进）本平台无法经 setTimeZone 生效，需在"约束为整小时"与"保留分数偏移（部分设备可用）"间抉择。

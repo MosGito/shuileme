@@ -4,7 +4,9 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.util.Log
+import com.sleepshift.admin.DeviceOwner
 import com.sleepshift.data.SettingsRepository
 import com.sleepshift.model.MAX_NIGHT_LENGTH_MIN
 import com.sleepshift.model.MIN_NIGHT_LENGTH_MIN
@@ -70,19 +72,87 @@ class TimezoneScheduler(
         Log.i(TAG, "cancel: 闹钟已清除")
     }
 
+    /**
+     * 执行偏移：读取 DataStore 当前状态（SchedulerState.currentOffsetMin）计算偏移时区并 setTimeZone。
+     * **不信任 PendingIntent 携带的 zone_id**；含防御性时区解析校验。
+     */
+    suspend fun applyShift() {
+        val state = repository.schedulerState.first()
+        val originalZoneId = state.originalTimezoneId
+        if (originalZoneId.isEmpty()) {
+            Log.w(TAG, "applyShift: 未保存原始时区，跳过")
+            return
+        }
+        val offset = state.currentOffsetMin
+        if (offset == 0) {
+            Log.i(TAG, "applyShift: 偏移为 0，跳过")
+            return
+        }
+        val zone = buildShiftZoneId(originalZoneId, offset)
+        val expectedOffsetMs = TimeZone.getTimeZone(originalZoneId).rawOffset + offset * 60_000
+        val resolved = TimeZone.getTimeZone(zone)
+        Log.i(TAG, "applyShift: offset=$offset zone=$zone resolvedId=${resolved.id} rawOffset=${resolved.rawOffset}")
+        if (resolved.rawOffset != expectedOffsetMs) {
+            Log.e(TAG, "applyShift: 时区解析不符 expected=$expectedOffsetMs zone=$zone")
+            return
+        }
+        val ok = DeviceOwner.setTimeZone(context, zone)
+        Log.i(TAG, "applyShift: setTimeZone($zone) ok=$ok")
+    }
+
+    /** 执行恢复：读取 DataStore 原始时区并 setTimeZone */
+    suspend fun applyRestore() {
+        val state = repository.schedulerState.first()
+        val originalZoneId = state.originalTimezoneId
+        if (originalZoneId.isEmpty()) {
+            Log.w(TAG, "applyRestore: 未保存原始时区，跳过")
+            return
+        }
+        val ok = DeviceOwner.setTimeZone(context, originalZoneId)
+        Log.i(TAG, "applyRestore: zone=$originalZoneId ok=$ok")
+    }
+
+    /**
+     * 设备重启后调用：若当前处于偏移窗口且恢复时刻在未来，补充武装当前窗口的恢复闹钟。
+     * 不覆盖当前正确状态（不强行恢复/不重置偏移）。
+     */
+    suspend fun ensureActiveWindowRestore() {
+        val settings = repository.settings.first()
+        val state = repository.schedulerState.first()
+        val originalZoneId = state.originalTimezoneId
+        if (!state.armed || originalZoneId.isEmpty()) return
+        if (TimeZone.getDefault().id == originalZoneId) return // 未处于偏移
+
+        val now = System.currentTimeMillis()
+        val activeStart = computePreviousShiftEpoch(settings.startTimeMin, originalZoneId, now)
+        val realWindow = nightLengthMin(settings.startTimeMin, settings.restoreTimeMin) - state.currentOffsetMin
+        val restoreEpoch = activeStart + realWindow * 60_000L
+        if (restoreEpoch > now) {
+            val alarmManager = context.getSystemService(AlarmManager::class.java)
+            alarmManager.setExactAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP, restoreEpoch,
+                restorePendingIntent(mapOf(EXTRA_ZONE_ID to originalZoneId)),
+            )
+            Log.i(TAG, "ensureActiveWindowRestore: 当前偏移窗口恢复闹钟已补充 epoch=$restoreEpoch")
+        }
+    }
+
     private suspend fun currentOriginalZoneId(state: SchedulerState): String =
         state.originalTimezoneId.ifEmpty { TimeZone.getDefault().id }
 
     private fun scheduleAlarms(shiftEpoch: Long, restoreEpoch: Long, shiftZoneId: String, originalZoneId: String) {
         val alarmManager = context.getSystemService(AlarmManager::class.java)
-        alarmManager.setExactAndAllowWhileIdle(
-            AlarmManager.RTC_WAKEUP, shiftEpoch,
-            shiftPendingIntent(mapOf(EXTRA_ZONE_ID to shiftZoneId)),
-        )
-        alarmManager.setExactAndAllowWhileIdle(
-            AlarmManager.RTC_WAKEUP, restoreEpoch,
-            restorePendingIntent(mapOf(EXTRA_ZONE_ID to originalZoneId)),
-        )
+        val shiftPI = shiftPendingIntent(mapOf(EXTRA_ZONE_ID to shiftZoneId))
+        val restorePI = restorePendingIntent(mapOf(EXTRA_ZONE_ID to originalZoneId))
+        if (Build.VERSION.SDK_INT >= 31 && !alarmManager.canScheduleExactAlarms()) {
+            // 无 SCHEDULE_EXACT_ALARM 权限时回退 setAlarmClock（无需权限，Doze 下也精确触发）
+            Log.w(TAG, "无精确闹钟权限，回退 setAlarmClock")
+            alarmManager.setAlarmClock(AlarmManager.AlarmClockInfo(shiftEpoch, null), shiftPI)
+            alarmManager.setAlarmClock(AlarmManager.AlarmClockInfo(restoreEpoch, null), restorePI)
+            return
+        }
+        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, shiftEpoch, shiftPI)
+        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, restoreEpoch, restorePI)
     }
 
     private fun shiftPendingIntent(extras: Map<String, String>): PendingIntent =
@@ -138,10 +208,15 @@ class TimezoneScheduler(
             val shiftEpoch = computeNextShiftEpoch(settings.startTimeMin, originalZoneId, nowEpochMillis)
             val nightEpochDay = shiftEpoch / DAY_MS
             val (offset, advancedState) = if (nightEpochDay != state.armedEpochDay) {
+                // 新夜晚：推进策略状态并取偏移
                 val result = strategyFor(settings.mode).next(settings, state)
                 result.offsetMin to result.state
             } else {
-                state.currentOffsetMin to state
+                // 同一晚重新武装：不推进策略进度；FIXED 按当前设置重算（跟随用户修改），GRADUAL/FLUCTUATION 保留已定偏移
+                when (settings.mode) {
+                    SleepShiftMode.FIXED -> settings.offsetMin to state
+                    else -> state.currentOffsetMin to state
+                }
             }
             val realWindow = nightLen - offset
             if (realWindow <= 0) return PlannedNight.invalid()
@@ -174,13 +249,34 @@ class TimezoneScheduler(
             return candidate.toInstant().toEpochMilli()
         }
 
+        /** 上一次开始偏移时刻：原始时区中 startTime 在 now 之前最近的一次出现 */
+        fun computePreviousShiftEpoch(startTimeMin: Int, originalZoneId: String, nowEpochMillis: Long): Long {
+            val zone = ZoneId.of(originalZoneId)
+            val now = Instant.ofEpochMilli(nowEpochMillis).atZone(zone)
+            var candidate = now.toLocalDate().atTime(startTimeMin / 60, startTimeMin % 60).atZone(zone)
+            if (candidate.isAfter(now)) candidate = candidate.minusDays(1)
+            return candidate.toInstant().toEpochMilli()
+        }
+
         /** 恢复时刻：开始时刻 + 真实窗口（分钟） */
         fun computeRestoreEpoch(shiftEpochMillis: Long, realWindowMin: Int): Long =
             shiftEpochMillis + realWindowMin * 60_000L
 
-        /** 动态偏移时区 ID：原始 UTC 偏移 + 偏移分钟 → GMT±HH:MM */
-        fun buildShiftZoneId(originalZoneId: String, offsetMin: Int): String =
-            buildShiftTimeZoneId(TimeZone.getTimeZone(originalZoneId).rawOffset, offsetMin)
+        /**
+         * 动态偏移时区 ID。
+         * 整小时总偏移 → IANA `Etc/GMT±H`（Android 新版 setTimeZone 仅应用 tzdb 内的 ID）；
+         * 分数分钟偏移 → 回退自定义 `GMT±HH:MM`（注意：部分平台 setTimeZone 静默忽略，运行时告警）。
+         */
+        fun buildShiftZoneId(originalZoneId: String, offsetMin: Int): String {
+            val originalOffsetMs = TimeZone.getTimeZone(originalZoneId).rawOffset
+            val totalMinutes = originalOffsetMs / 60_000 + offsetMin
+            if (totalMinutes % 60 == 0) {
+                val hours = totalMinutes / 60
+                // Etc/GMT 为 POSIX 符号反转：UTC+H → Etc/GMT-H
+                return if (hours >= 0) "Etc/GMT-$hours" else "Etc/GMT+${-hours}"
+            }
+            return buildShiftTimeZoneId(originalOffsetMs, offsetMin)
+        }
     }
 }
 

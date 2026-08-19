@@ -36,6 +36,21 @@
             </intent-filter>
         </receiver>
 
+        <!-- 精确闹钟接收器：ACTION_SHIFT / ACTION_RESTORE（exported 以便 adb 手动测试触发） -->
+        <receiver
+            android:name=".AlarmReceiver"
+            android:exported="true" />
+
+        <!-- 开机 / 应用更新后重新武装调度 -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

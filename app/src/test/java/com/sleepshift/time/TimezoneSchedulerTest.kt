@@ -50,10 +50,34 @@ class TimezoneSchedulerTest {
     }
 
     @Test
+    fun `re-arm same night picks up changed FIXED offset`() {
+        val now = ZonedDateTime.of(2026, 8, 19, 12, 0, 0, 0, ZoneId.of(originalZone)).toInstant().toEpochMilli()
+        val s1 = SleepShiftSettings(enabled = true, startTimeMin = 22 * 60 + 30, restoreTimeMin = 6 * 60 + 30, offsetMin = 45)
+        val p1 = TimezoneScheduler.planNight(s1, SchedulerState(), now, originalZone)
+        assertEquals(45, p1.offsetMin)
+        // 同一晚重新武装：FIXED 按新设置重算（不推进策略进度）
+        val s2 = s1.copy(offsetMin = 180)
+        val p2 = TimezoneScheduler.planNight(s2, p1.state, now, originalZone)
+        assertEquals(180, p2.offsetMin)
+        assertEquals(180, p2.state.currentOffsetMin)
+        // 不重复推进
+        assertEquals(p1.state.gradualProgressDays, p2.state.gradualProgressDays)
+    }
+
+    @Test
     fun `planNight - invalid when disabled`() {
         val settings = SleepShiftSettings(enabled = false)
         val planned = TimezoneScheduler.planNight(settings, SchedulerState(), 0L, originalZone)
         assertFalse(planned.valid)
+    }
+
+    @Test
+    fun `previous shift epoch returns today's start when now is after start`() {
+        // now = 23:00 > 22:30 → 上一次开始偏移是今天 22:30
+        val now = ZonedDateTime.of(2026, 8, 19, 23, 0, 0, 0, ZoneId.of(originalZone)).toInstant().toEpochMilli()
+        val prev = TimezoneScheduler.computePreviousShiftEpoch(22 * 60 + 30, originalZone, now)
+        val expected = ZonedDateTime.of(2026, 8, 19, 22, 30, 0, 0, ZoneId.of(originalZone)).toInstant().toEpochMilli()
+        assertEquals(expected, prev)
     }
 
     @Test
@@ -66,11 +90,13 @@ class TimezoneSchedulerTest {
     }
 
     @Test
-    fun `dynamic zone id follows 15min offset step`() {
-        assertEquals("GMT+10:00", TimezoneScheduler.buildShiftZoneId(originalZone, 120))
+    fun `dynamic zone id - whole hour uses IANA Etc, fractional falls back to GMT offset`() {
+        // 整小时总偏移 → IANA Etc/GMT±H（本平台 setTimeZone 仅应用 tzdb 内 ID）
+        assertEquals("Etc/GMT-10", TimezoneScheduler.buildShiftZoneId(originalZone, 120)) // +8h+2h=+10
+        assertEquals("Etc/GMT-11", TimezoneScheduler.buildShiftZoneId(originalZone, 180)) // +8h+3h=+11
+        assertEquals("Etc/GMT-8", TimezoneScheduler.buildShiftZoneId(originalZone, 0))    // +8h
+        // 分数分钟偏移 → 回退自定义 GMT±HH:MM（平台可能不应用）
         assertEquals("GMT+10:15", TimezoneScheduler.buildShiftZoneId(originalZone, 135))
-        assertEquals("GMT+11:00", TimezoneScheduler.buildShiftZoneId(originalZone, 180))
-        assertEquals("GMT+08:00", TimezoneScheduler.buildShiftZoneId(originalZone, 0))
     }
 
     @Test
