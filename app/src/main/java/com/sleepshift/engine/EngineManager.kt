@@ -10,9 +10,12 @@ import android.content.Context
  */
 class EngineManager(private val context: Context) {
 
-    // Phase 11-A：仅 Device Owner；Shizuku/Root 待后续里程碑追加
+    // Phase 11-B：Shizuku（优先） + Device Owner；Root 待 M2
     private val engines: List<TimeShiftEngine> =
-        listOf(DeviceOwnerTimeShiftEngine(context))
+        listOf(
+            ShizukuTimeShiftEngine(context),
+            DeviceOwnerTimeShiftEngine(context),
+        )
 
     /** 当前可用引擎：按列表优先级返回第一个 [TimeShiftEngine.isAvailable] 为 true 的引擎；无则 null */
     val activeEngine: TimeShiftEngine?

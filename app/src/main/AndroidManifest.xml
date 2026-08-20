@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- 睡眠模式开始/恢复通知（API 33+ 需运行时授权） -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 【实验】阶段7 时区权限路线验证（WRITE_SETTINGS 通道），仅为实验，不代表最终产品方案 -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
 
     <application
         android:name=".SleepShiftApplication"
@@ -24,6 +26,20 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 能力状态调试页（开发验证用，独立于主流程） -->
+        <activity
+            android:name=".DebugActivity"
+            android:exported="true" />
+
+        <!-- Shizuku 授权 Provider（Shizuku Mode 必需） -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <!-- 设备管理员接收器：Device Owner 授权与回调必须用它 -->
         <receiver
