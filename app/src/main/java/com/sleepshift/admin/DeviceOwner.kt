@@ -35,6 +35,22 @@ object DeviceOwner {
         return result
     }
 
+    /** 开关自动时区（Device Owner 可写全局设置）；失败返回 false */
+    fun setAutoTimeZone(context: Context, enabled: Boolean): Boolean {
+        return try {
+            Settings.Global.putInt(
+                context.contentResolver,
+                Settings.Global.AUTO_TIME_ZONE,
+                if (enabled) 1 else 0,
+            )
+            Log.i(TAG, "setAutoTimeZone(enabled=$enabled)")
+            true
+        } catch (e: SecurityException) {
+            Log.w(TAG, "setAutoTimeZone(enabled=$enabled) 失败：${e.message}")
+            false
+        }
+    }
+
     /** Device Owner 可写 AUTO_TIME_ZONE；开启自动时区时系统会拒绝固定时区 */
     private fun ensureAutoTimeZoneDisabled(context: Context) {
         try {

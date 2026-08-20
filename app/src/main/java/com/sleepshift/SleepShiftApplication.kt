@@ -2,6 +2,8 @@ package com.sleepshift
 
 import android.app.Application
 import com.sleepshift.data.SettingsRepository
+import com.sleepshift.engine.EngineManager
+import com.sleepshift.engine.DeviceOwnerTimeShiftEngine
 import com.sleepshift.time.TimezoneScheduler
 
 /**
@@ -13,5 +15,14 @@ class SleepShiftApplication : Application() {
 
     val settingsRepository: SettingsRepository by lazy { SettingsRepository(this) }
 
-    val timezoneScheduler: TimezoneScheduler by lazy { TimezoneScheduler(this, settingsRepository) }
+    /** 时区引擎管理器：Phase 11-A 仅含 Device Owner 引擎；M1/M2 追加 Shizuku/Root */
+    val engineManager: EngineManager by lazy { EngineManager(this) }
+
+    val timezoneScheduler: TimezoneScheduler by lazy {
+        TimezoneScheduler(
+            this,
+            settingsRepository,
+            engineManager.activeEngine ?: DeviceOwnerTimeShiftEngine(this),
+        )
+    }
 }

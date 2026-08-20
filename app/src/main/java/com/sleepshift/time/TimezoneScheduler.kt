@@ -6,8 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
-import com.sleepshift.admin.DeviceOwner
 import com.sleepshift.data.SettingsRepository
+import com.sleepshift.engine.TimeShiftEngine
 import com.sleepshift.notify.NotificationHelper
 import com.sleepshift.model.MAX_NIGHT_LENGTH_MIN
 import com.sleepshift.model.MIN_NIGHT_LENGTH_MIN
@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.first
 class TimezoneScheduler(
     private val context: Context,
     private val repository: SettingsRepository,
+    private val timeShiftEngine: TimeShiftEngine,
 ) {
 
     /** 读取当前配置并武装下一次完整夜晚（偏移/恢复各一个精确闹钟） */
@@ -106,9 +107,9 @@ class TimezoneScheduler(
             Log.e(TAG, "applyShift: 时区解析不符 expected=$expectedOffsetMs zone=$zone")
             return
         }
-        val ok = DeviceOwner.setTimeZone(context, zone)
-        Log.i(TAG, "applyShift: setTimeZone($zone) ok=$ok")
-        if (ok) NotificationHelper.notifySleepModeStarted(context)
+        val result = timeShiftEngine.setTimeZone(zone)
+        Log.i(TAG, "applyShift: ${result.engineType} setTimeZone($zone) success=${result.success} ${result.message}")
+        if (result.success) NotificationHelper.notifySleepModeStarted(context)
     }
 
     /** 执行恢复：读取 DataStore 原始时区并 setTimeZone */
@@ -119,9 +120,9 @@ class TimezoneScheduler(
             Log.w(TAG, "applyRestore: 未保存原始时区，跳过")
             return
         }
-        val ok = DeviceOwner.setTimeZone(context, originalZoneId)
-        Log.i(TAG, "applyRestore: zone=$originalZoneId ok=$ok")
-        if (ok) NotificationHelper.notifyTimeRestored(context)
+        val result = timeShiftEngine.setTimeZone(originalZoneId)
+        Log.i(TAG, "applyRestore: ${result.engineType} zone=$originalZoneId success=${result.success} ${result.message}")
+        if (result.success) NotificationHelper.notifyTimeRestored(context)
     }
 
     /**
