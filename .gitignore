@@ -8,3 +8,5 @@
 .externalNativeBuild
 .cxx
 app/build
+# 设备 DataStore 偏好诊断 dump（adb pull 临时产物）
+ds.pb

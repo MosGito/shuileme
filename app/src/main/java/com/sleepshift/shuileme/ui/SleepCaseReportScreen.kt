@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -35,8 +36,13 @@ fun SleepCaseReportScreen(report: MorningDetectiveReport, onBack: () -> Unit) {
             .fillMaxSize()
             .verticalScroll(rememberScrollState()),
     ) {
-        // 顶部返回
-        Row(Modifier.fillMaxWidth().padding(16.dp)) {
+        // 顶部返回（SL-9.6：移入安全区，距顶部更远，避免贴近状态栏）
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        ) {
             TextButton(onClick = onBack) { Text("← 返回", color = ShuilemeNight.TextSecondary) }
         }
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -50,15 +56,15 @@ fun SleepCaseReportScreen(report: MorningDetectiveReport, onBack: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                Text("🌙", fontSize = 48.sp)
+                Text("🌙", fontSize = 54.sp)
                 Spacer(Modifier.height(8.dp))
-                Text("昨晚月亮观察", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = ShuilemeNight.TextPrimary)
+                Text("昨晚月亮观察", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = ShuilemeNight.TextPrimary)
                 Spacer(Modifier.height(20.dp))
                 // 案件等级
-                Text(report.caseLevel.emoji, fontSize = 56.sp)
+                Text(report.caseLevel.emoji, fontSize = 60.sp)
                 Text(
                     report.caseLevel.displayName,
-                    fontSize = 20.sp,
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = ShuilemeNight.Accent,
                 )
@@ -66,14 +72,14 @@ fun SleepCaseReportScreen(report: MorningDetectiveReport, onBack: () -> Unit) {
                 // 观察结论
                 Text(
                     report.observation,
-                    fontSize = 18.sp,
+                    fontSize = 22.sp,
                     color = ShuilemeNight.TextPrimary,
                     textAlign = TextAlign.Center,
                 )
                 Spacer(Modifier.height(12.dp))
                 Text(
                     "案件结论：${report.conclusion}",
-                    fontSize = 18.sp,
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = ShuilemeNight.Accent,
                     textAlign = TextAlign.Center,
@@ -81,7 +87,7 @@ fun SleepCaseReportScreen(report: MorningDetectiveReport, onBack: () -> Unit) {
                 Spacer(Modifier.height(24.dp))
                 Text(
                     "数据仅供娱乐，月亮不是医生",
-                    fontSize = 15.sp,
+                    fontSize = 18.sp,
                     color = ShuilemeNight.TextSecondary,
                 )
             }

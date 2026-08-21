@@ -4,6 +4,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,8 +30,39 @@ object ShuilemeNight {
     val Card = Color(0x14FFFFFF)
     /** 半透明强卡片 */
     val CardStrong = Color(0x26FFFFFF)
-    val TextPrimary = Color(0xFFF5F5FA)
-    val TextSecondary = Color(0xFF9AA0B5)
+    val TextPrimary = Color(0xFFF8F8FF)
+    val TextSecondary = Color(0xFFB4B9CC)
+    val TextTertiary = Color(0x99FFFFFF) // 更低优先级辅助文字
+}
+
+/** SL-9.7：统一文字颜色入口（所有 Text 默认走这里，禁 Material onBackground/黑字） */
+object ShuilemeTextColors {
+    /** 主文字：接近白色 */
+    val Primary = Color(0xFFF8F8FF)
+    /** 次文字：白色降 alpha */
+    val Secondary = Color(0xFFB4B9CC)
+    /** 强调/链接：月光黄 */
+    val Accent = Color(0xFFFFE082)
+}
+
+/**
+ * SL-9.6：夜光按钮 —— 暗琥珀容器 + 近白文字。
+ * 禁止 Material 默认深色 onPrimary 文字；保留月光黄身份但降低容器亮度保证浅色文字可读。
+ */
+@Composable
+fun NightButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = ShuilemeNight.Accent.copy(alpha = 0.28f),
+            contentColor = ShuilemeNight.TextPrimary,
+        ),
+    ) { content() }
 }
 
 /** 星点数据 */

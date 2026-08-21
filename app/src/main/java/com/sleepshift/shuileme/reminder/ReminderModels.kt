@@ -10,7 +10,13 @@ enum class ReminderPersonality(val emoji: String, val displayName: String) {
     /** 😈 毒舌朋友 */
     SHARP("😈", "毒舌朋友"),
     /** 🐮🐴 牛马提醒 */
-    WORK_HORSE("🐮🐴", "牛马提醒"),
+    WORK_HORSE("🐮🐴", "牛马提醒");
+
+    /** SL-9.10：展示用随机单 emoji（牛马每次随机 🐮 或 🐴，保持视觉长度统一） */
+    fun displayEmoji(): String = when (this) {
+        WORK_HORSE -> if (kotlin.random.Random.nextBoolean()) "🐮" else "🐴"
+        else -> emoji
+    }
 }
 
 /** 提醒类型 */

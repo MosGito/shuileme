@@ -16,7 +16,7 @@ class BubbleBoundaryTest {
     @Test
     fun `气泡被重力推到边界内不越界`() {
         var p = physicsWith()
-        repeat(300) { p = p.step(gravityY = 5f, dt = 0.1f) }
+        repeat(300) { p = p.step(dt = 0.1f) }
         val b = p.bubbles.first()
         val maxY = 400f - PersonaBubblePhysics.BUBBLE_SIZE - 40f
         assertTrue("y=${b.y} <= $maxY", b.y <= maxY)
@@ -37,7 +37,7 @@ class BubbleBoundaryTest {
     fun `冻结的气泡不受重力影响`() {
         var p = physicsWith().moveBubble(0, 50f, 50f, drag = true)
         val before = p.bubbles[0]
-        repeat(50) { p = p.step(gravityY = 5f, dt = 0.1f) }
+        repeat(50) { p = p.step(dt = 0.1f) }
         val after = p.bubbles[0]
         assertEquals(before.x, after.x, 0.01f)
         assertEquals(before.y, after.y, 0.01f) // 拖动中不落
@@ -46,7 +46,7 @@ class BubbleBoundaryTest {
     @Test
     fun `松手后带速度漂移并弹跳`() {
         var p = physicsWith().moveBubble(0, 50f, 50f, vx = 30f, vy = 20f, drag = false)
-        repeat(30) { p = p.step(gravityY = 5f, dt = 0.1f) }
+        repeat(30) { p = p.step(dt = 0.1f) }
         val b = p.bubbles[0]
         assertTrue("应移动", b.x != 50f || b.y != 50f)
     }
@@ -60,7 +60,7 @@ class BubbleBoundaryTest {
                 Bubble(x = 52f, y = 50f, emoji = "🐱"),
             ),
         )
-        val stepped = p.step(gravityY = 0f, dt = 0.016f)
+        val stepped = p.step(dt = 0.016f)
         val dx = stepped.bubbles[1].x - stepped.bubbles[0].x
         assertTrue("重叠应被推开 dx=$dx", dx >= PersonaBubblePhysics.BUBBLE_SIZE * 1.2f - 1f)
     }

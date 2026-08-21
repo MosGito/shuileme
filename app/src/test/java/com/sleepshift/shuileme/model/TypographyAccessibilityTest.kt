@@ -12,7 +12,7 @@ class TypographyAccessibilityTest {
         assertTrue(ShuilemeTypography.TITLE_SP > ShuilemeTypography.BODY_SP)
         assertTrue(ShuilemeTypography.BODY_SP > ShuilemeTypography.CAPTION_SP)
         assertTrue("人格名应足够大（视觉焦点）", ShuilemeTypography.PERSONA_SP >= 36f)
-        assertTrue("主标题 28-32sp", ShuilemeTypography.TITLE_SP in 28f..32f)
+        assertTrue("主标题 32-40sp（SL-9.7 放大）", ShuilemeTypography.TITLE_SP in 32f..40f)
     }
 
     @Test

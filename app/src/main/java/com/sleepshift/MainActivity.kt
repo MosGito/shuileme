@@ -8,6 +8,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
 import com.sleepshift.shuileme.data.ShuilemeRepository
 import com.sleepshift.shuileme.model.OnboardingFlow
@@ -17,6 +20,7 @@ import com.sleepshift.shuileme.ui.ShuilemeOnboardingScreen
 import com.sleepshift.shuileme.ui.ShuilemeViewModel
 import com.sleepshift.shuileme.ui.ShuilemeViewModelFactory
 import com.sleepshift.shuileme.widget.ShuilemeWidgetRefreshScheduler
+import com.sleepshift.ui.WelcomeDialog
 import com.sleepshift.ui.theme.SleepShiftTheme
 import kotlinx.coroutines.launch
 
@@ -52,11 +56,31 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch { ShuilemeReminderScheduler.scheduleAll(applicationContext) }
         setContent {
             SleepShiftTheme {
-                val onboarding by shuilemeViewModel.onboarding.collectAsState()
-                if (OnboardingFlow.shouldShowOnboarding(onboarding)) {
-                    ShuilemeOnboardingScreen(viewModel = shuilemeViewModel)
+                // SL-9.10 内测包装：首次启动欢迎弹窗作为 onboarding 的前置介绍层。
+                // 未点「开始探索」前仅渲染 WelcomeDialog（全屏），完成后才进入原导航流程，
+                // 避免与 onboarding 同时出现（此前为全局 overlay）。
+                var showWelcome by remember {
+                    mutableStateOf(
+                        getSharedPreferences("welcome", MODE_PRIVATE)
+                            .getBoolean("hasShownWelcomeDialog", false)
+                            .not()
+                    )
+                }
+                if (showWelcome) {
+                    WelcomeDialog(
+                        onDismiss = {
+                            getSharedPreferences("welcome", MODE_PRIVATE)
+                                .edit().putBoolean("hasShownWelcomeDialog", true).apply()
+                            showWelcome = false
+                        }
+                    )
                 } else {
-                    ShuilemeHomeScreen(viewModel = shuilemeViewModel)
+                    val onboarding by shuilemeViewModel.onboarding.collectAsState()
+                    if (OnboardingFlow.shouldShowOnboarding(onboarding)) {
+                        ShuilemeOnboardingScreen(viewModel = shuilemeViewModel)
+                    } else {
+                        ShuilemeHomeScreen(viewModel = shuilemeViewModel)
+                    }
                 }
             }
         }

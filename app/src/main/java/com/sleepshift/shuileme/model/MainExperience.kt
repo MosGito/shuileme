@@ -29,12 +29,23 @@ object MoonGlow {
     fun glowBlur(intensity: Float): Float = 20f + intensity.coerceIn(0f, 1f) * 24f
 }
 
-/** 人格气泡（SL-8 装饰，非角色/非宠物） */
-data class Bubble(val x: Float, val y: Float, val vx: Float = 0f, val vy: Float = 0f, val emoji: String)
+/** 人格气泡（SL-8 装饰，非角色/非宠物；SL-9.8.1 补 id/radius） */
+data class Bubble(
+    val x: Float,
+    val y: Float,
+    val vx: Float = 0f,
+    val vy: Float = 0f,
+    val emoji: String,
+    val id: Int = 0,
+    val radius: Float = 24f,
+)
 
 /**
- * 人格气泡物理（SL-9，纯函数可测）：重力 + 四壁碰撞弹性反射，不能离开可视区域。
- * 传感器倾斜（SensorManager）为增强项，首版用固定重力动画循环。
+ * 人格气泡物理（SL-9.6，纯函数可测）：失重漂浮。
+ * - 无重力方向，不依赖传感器；
+ * - 每个气泡以缓慢振荡速度漂移（elapsed 驱动，纯函数确定性）；
+ * - 四壁碰撞弹性反射 + 气泡间相互推开；
+ * - frozen 的（被拖动）气泡位置由用户控制。
  */
 data class PersonaBubblePhysics(
     val width: Float = 400f,
@@ -42,34 +53,37 @@ data class PersonaBubblePhysics(
     val bubbles: List<Bubble> = emptyList(),
     /** SL-9.1：月亮窗台高度（气泡不越过窗台） */
     val insetBottom: Float = 0f,
-    /** SL-9.2.2：被拖动的气泡索引（不受重力影响，位置由用户控制） */
+    /** SL-9.2.2：被拖动的气泡索引（不受漂移影响，位置由用户控制） */
     val frozen: Set<Int> = emptySet(),
+    /** SL-9.6：内部时钟，驱动失重漂移（纯函数可测） */
+    val elapsed: Float = 0f,
 ) {
-    fun step(gravityY: Float, dt: Float, bounce: Float = 0.5f): PersonaBubblePhysics =
-        step(gravityX = 0f, gravityY = gravityY, dt = dt, bounce = bounce)
-
-    /** SL-9.3：支持重力 X + 窗台边界 + frozen + 气泡相互碰撞 */
-    fun step(gravityX: Float, gravityY: Float, dt: Float, bounce: Float = 0.5f): PersonaBubblePhysics {
+    /** SL-9.6：失重漂浮单步（无重力；气泡缓慢漂移 + 四壁反弹 + 相互碰撞） */
+    fun step(dt: Float, bounce: Float = 0.5f): PersonaBubblePhysics {
         val maxX = (width - BUBBLE_SIZE).coerceAtLeast(0f)
         val maxY = (height - BUBBLE_SIZE - insetBottom).coerceAtLeast(0f)
+        val t = elapsed + dt
         val next = bubbles.mapIndexed { idx, b ->
             if (idx in frozen) {
-                b.copy(vx = 0f, vy = 0f) // 拖动中：清除速度，不落
+                b.copy(vx = 0f, vy = 0f) // 拖动中：不漂移
             } else {
-                val ny = b.vy + gravityY * dt
-                var y = b.y + ny * dt
-                var vy = ny
-                if (y > maxY) { y = maxY; vy = -vy * bounce }
-                if (y < 0f) { y = 0f; vy = -vy * bounce }
-                val nx = b.vx + gravityX * dt
-                var x = b.x + nx * dt
-                var vx = nx
+                // 失重漂浮：速度缓慢振荡（不同气泡不同相位，慢速 ~8dp/s）
+                val p1 = idx * 1.3f + t * 0.22f
+                val p2 = idx * 1.9f + t * 0.18f
+                val driftX = kotlin.math.sin(p1) * 8f
+                val driftY = kotlin.math.cos(p2) * 7f
+                var vx = b.vx + (driftX - b.vx) * 0.06f
+                var vy = b.vy + (driftY - b.vy) * 0.06f
+                var x = b.x + vx * dt
+                var y = b.y + vy * dt
                 if (x > maxX) { x = maxX; vx = -vx * bounce }
                 if (x < 0f) { x = 0f; vx = -vx * bounce }
-                b.copy(x = x, y = y, vy = vy, vx = vx)
+                if (y > maxY) { y = maxY; vy = -vy * bounce }
+                if (y < 0f) { y = 0f; vy = -vy * bounce }
+                b.copy(x = x, y = y, vx = vx, vy = vy)
             }
         }
-        return copy(bubbles = resolveCollisions(next, maxX, maxY))
+        return copy(bubbles = resolveCollisions(next, maxX, maxY), elapsed = t)
     }
 
     /** 气泡间碰撞：重叠则推开（SL-9.3） */
@@ -135,6 +149,7 @@ data class PersonaBubblePhysics(
                 val h = (i + 1) * 2654435761L + seed * 40503L + 1L
                 val v = ((h ushr 32) xor h) and 0x7fffffffL
                 Bubble(
+                    id = i,
                     x = (v % (maxX + 1).toLong()).toFloat(),
                     y = ((v shr 3) % (maxY + 1).toLong()).toFloat(),
                     vx = (((v shr 7) % 20L).toFloat()) - 10f,
@@ -143,19 +158,6 @@ data class PersonaBubblePhysics(
             }
         }
     }
-}
-
-/**
- * SL-9.1：传感器重力解析；无传感器/关闭 → 模拟重力（默认下坠）。
- * sensorTilt 为归一化加速度方向（-1..1）；无传感器返回默认下坠。
- */
-fun resolveGravity(
-    sensorTilt: Pair<Float, Float>?,
-    baseline: Float = 260f,
-    sensitivity: Float = 260f,
-): Pair<Float, Float> {
-    if (sensorTilt == null) return 0f to baseline
-    return sensorTilt.first * sensitivity to (baseline + sensorTilt.second * sensitivity)
 }
 
 /**
@@ -211,10 +213,10 @@ object MoonRipple {
  * 人格名称（视觉焦点）> 主标题 > 正文 > 辅助。
  */
 object ShuilemeTypography {
-    const val TITLE_SP = 30f      // 你的睡眠人格是
+    const val TITLE_SP = 36f      // 你的睡眠人格是（SL-9.7 放大）
     const val PERSONA_SP = 40f    // 夜猫子型（视觉焦点）
-    const val BODY_SP = 18f       // 正文
-    const val CAPTION_SP = 15f    // 辅助说明
+    const val BODY_SP = 22f       // 正文（SL-9.7 放大）
+    const val CAPTION_SP = 18f    // 辅助说明（SL-9.7 放大）
 
     /** 深色背景下文字是否足够亮（可读性检查） */
     fun isLightEnough(r: Int, g: Int, b: Int): Boolean {

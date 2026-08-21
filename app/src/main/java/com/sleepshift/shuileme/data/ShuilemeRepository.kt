@@ -63,6 +63,9 @@ data class ShuilemeState(
     val targetSleepTimeMin: Int = DEFAULT_TARGET_SLEEP_TIME_MIN,
     /** 目标起床时间（SL-9 睡眠窗口，如 07:00=420） */
     val targetWakeTimeMin: Int = DEFAULT_TARGET_WAKE_TIME_MIN,
+    /** SL-9.10：当前真实作息（第二组时间） */
+    val currentSleepTimeMin: Int = DEFAULT_CURRENT_SLEEP_TIME_MIN,
+    val currentWakeTimeMin: Int = DEFAULT_CURRENT_WAKE_TIME_MIN,
     /** 提醒配置（SL-4） */
     val reminderProfile: ReminderProfile = ReminderProfile(),
     /** 今晚放过我（SL-4）：active + 生效日 epochDay */
@@ -88,6 +91,8 @@ data class ShuilemeState(
     companion object {
         const val DEFAULT_TARGET_SLEEP_TIME_MIN = 1380 // 23:00
         const val DEFAULT_TARGET_WAKE_TIME_MIN = 420   // 07:00
+        const val DEFAULT_CURRENT_SLEEP_TIME_MIN = 120 // 02:00（当前现实作息）
+        const val DEFAULT_CURRENT_WAKE_TIME_MIN = 720  // 12:00
     }
 }
 
@@ -117,6 +122,9 @@ class ShuilemeRepository(private val context: Context) {
         // 月亮成长（SL-2-5）
         val TARGET_SLEEP_TIME_MIN = intPreferencesKey("target_sleep_time_min")
         val TARGET_WAKE_TIME_MIN = intPreferencesKey("target_wake_time_min")
+        // SL-9.10：当前真实作息（第二组时间，睡眠人格分析核心数据）
+        val CURRENT_SLEEP_TIME_MIN = intPreferencesKey("current_sleep_time_min")
+        val CURRENT_WAKE_TIME_MIN = intPreferencesKey("current_wake_time_min")
         val GROWTH_PERCENT = intPreferencesKey("growth_percent")
         val CONSECUTIVE_QUALIFIED = intPreferencesKey("consecutive_qualified")
         val TOTAL_COMPLETED_SLEEPS = intPreferencesKey("total_completed_sleeps")
@@ -174,6 +182,8 @@ class ShuilemeRepository(private val context: Context) {
             moonProgress = readMoonProgress(p),
             targetSleepTimeMin = p[Keys.TARGET_SLEEP_TIME_MIN] ?: ShuilemeState.DEFAULT_TARGET_SLEEP_TIME_MIN,
             targetWakeTimeMin = p[Keys.TARGET_WAKE_TIME_MIN] ?: ShuilemeState.DEFAULT_TARGET_WAKE_TIME_MIN,
+            currentSleepTimeMin = p[Keys.CURRENT_SLEEP_TIME_MIN] ?: ShuilemeState.DEFAULT_CURRENT_SLEEP_TIME_MIN,
+            currentWakeTimeMin = p[Keys.CURRENT_WAKE_TIME_MIN] ?: ShuilemeState.DEFAULT_CURRENT_WAKE_TIME_MIN,
             reminderProfile = ReminderProfile(
                 personality = ReminderPersonality.entries.getOrElse(p[Keys.PERSONALITY] ?: 0) { ReminderPersonality.MOON },
                 sleepReminderAdvanceMin = p[Keys.SLEEP_ADVANCE_MIN] ?: ReminderProfile().sleepReminderAdvanceMin,
@@ -316,6 +326,21 @@ class ShuilemeRepository(private val context: Context) {
         }
     }
 
+    /** SL-9.10：保存完整睡眠目标（目标 + 当前两组时间） */
+    suspend fun setSleepGoal(
+        targetSleep: Int,
+        targetWake: Int,
+        currentSleep: Int,
+        currentWake: Int,
+    ) {
+        dataStore.edit { p ->
+            p[Keys.TARGET_SLEEP_TIME_MIN] = targetSleep
+            p[Keys.TARGET_WAKE_TIME_MIN] = targetWake
+            p[Keys.CURRENT_SLEEP_TIME_MIN] = currentSleep
+            p[Keys.CURRENT_WAKE_TIME_MIN] = currentWake
+        }
+    }
+
     /** 完成新用户体验（SL-4.5）：持久化引导状态 + 同步人格与目标睡眠窗口 */
     suspend fun completeOnboarding(selection: OnboardingState) {
         dataStore.edit { p ->
@@ -328,6 +353,8 @@ class ShuilemeRepository(private val context: Context) {
             p[Keys.PERSONALITY] = selection.selectedPersonality.ordinal
             p[Keys.TARGET_SLEEP_TIME_MIN] = selection.targetSleepTime
             p[Keys.TARGET_WAKE_TIME_MIN] = selection.targetWakeTime
+            p[Keys.CURRENT_SLEEP_TIME_MIN] = selection.currentSleepTime
+            p[Keys.CURRENT_WAKE_TIME_MIN] = selection.currentWakeTime
         }
     }
 

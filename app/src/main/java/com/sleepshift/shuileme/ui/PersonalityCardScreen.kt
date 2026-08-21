@@ -71,7 +71,7 @@ fun PersonalityCardScreen(
                 CardContent(model)
             }
             Spacer(Modifier.height(16.dp))
-            Button(
+            NightButton(
                 onClick = {
                     scope.launch {
                         val bitmap = graphicsLayer.toImageBitmap().asAndroidBitmap()
@@ -113,10 +113,10 @@ private fun CardContent(model: PersonalityCardModel) {
     ) {
         // 装饰气泡行
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            decoration.take(3).forEach { Text(it, fontSize = 28.sp) }
+            decoration.take(3).forEach { Text(it, fontSize = 34.sp) }
         }
         Spacer(Modifier.height(16.dp))
-        Text("你的睡眠人格是", fontSize = 24.sp, color = ShuilemeNight.TextSecondary)
+        Text("你的睡眠人格是", fontSize = 32.sp, color = ShuilemeNight.TextSecondary)
         Text(
             model.title,
             fontSize = 40.sp,
@@ -126,7 +126,7 @@ private fun CardContent(model: PersonalityCardModel) {
         Spacer(Modifier.height(8.dp))
         Text(
             model.description,
-            fontSize = 16.sp,
+            fontSize = 22.sp,
             color = ShuilemeNight.TextSecondary,
             textAlign = TextAlign.Center,
         )
@@ -137,12 +137,12 @@ private fun CardContent(model: PersonalityCardModel) {
         DataRow("📈", "规律程度", "${model.regularityScore}%")
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            decoration.drop(3).forEach { Text(it, fontSize = 28.sp) }
+            decoration.drop(3).forEach { Text(it, fontSize = 34.sp) }
         }
         Spacer(Modifier.height(12.dp))
         Text(
             "睡了么 · 一个假装时间变晚的小工具",
-            fontSize = 14.sp,
+            fontSize = 18.sp,
             color = ShuilemeNight.TextSecondary,
         )
     }
@@ -156,9 +156,9 @@ private fun DataRow(emoji: String, label: String, value: String) {
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(emoji, fontSize = 16.sp)
+        Text(emoji, fontSize = 22.sp)
         Spacer(Modifier.width(8.dp))
-        Text(label, fontSize = 16.sp, color = ShuilemeNight.TextSecondary, modifier = Modifier.weight(1f))
-        Text(value, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = ShuilemeNight.TextPrimary)
+        Text(label, fontSize = 22.sp, color = ShuilemeNight.TextSecondary, modifier = Modifier.weight(1f))
+        Text(value, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = ShuilemeNight.TextPrimary)
     }
 }

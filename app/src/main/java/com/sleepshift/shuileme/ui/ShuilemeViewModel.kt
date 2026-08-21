@@ -198,6 +198,16 @@ class ShuilemeViewModel(
     }
 
     /** SL-8：设置抽屉 - 设置目标入睡时间（分钟） */
+    /** SL-9.10：保存完整睡眠目标（目标 + 当前两组时间） */
+    fun setSleepGoal(
+        targetSleep: Int,
+        targetWake: Int,
+        currentSleep: Int,
+        currentWake: Int,
+    ) {
+        viewModelScope.launch { repository.setSleepGoal(targetSleep, targetWake, currentSleep, currentWake) }
+    }
+
     fun setTargetSleepTime(targetSleepTimeMin: Int) {
         viewModelScope.launch {
             repository.setTargetSleepTime(targetSleepTimeMin)

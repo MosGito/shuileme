@@ -50,13 +50,13 @@ class MainExperienceTest {
             bubbles = listOf(Bubble(x = 10f, y = 10f, vy = 0f, emoji = "🌙")),
         )
         var p = physics
-        repeat(200) { p = p.step(gravityY = 5f, dt = 0.1f) }
+        repeat(200) { p = p.step(dt = 0.1f) }
         val b = p.bubbles.first()
         assertTrue("y 应 >= 0", b.y >= 0f)
         assertTrue("y 应 <= maxY（不出界）", b.y <= maxY)
         // 四壁反射后速度不恒为 0（弹跳）
         var p2 = physics.copy(bubbles = listOf(Bubble(x = 1f, y = 1f, vx = 8f, vy = 0f, emoji = "🌙")))
-        repeat(10) { p2 = p2.step(gravityY = 5f, dt = 0.1f) }
+        repeat(10) { p2 = p2.step(dt = 0.1f) }
         val b2 = p2.bubbles.first()
         assertTrue(b2.x in 0f..(100f - PersonaBubblePhysics.BUBBLE_SIZE))
     }
@@ -120,16 +120,6 @@ class MainExperienceTest {
     }
 
     @Test
-    fun `无传感器降级为模拟重力`() {
-        val g = resolveGravity(null)
-        assertEquals(0f, g.first, 0f)
-        assertTrue("默认应下坠", g.second > 0f)
-        // 有传感器：倾斜影响 X
-        val tilted = resolveGravity(0.5f to 0f)
-        assertTrue(tilted.first > 0f)
-    }
-
-    @Test
     fun `气泡不越过月亮窗台`() {
         val maxY = 200f - PersonaBubblePhysics.BUBBLE_SIZE - 40f
         val physics = PersonaBubblePhysics(
@@ -137,7 +127,7 @@ class MainExperienceTest {
             bubbles = listOf(Bubble(x = 10f, y = 10f, vy = 0f, emoji = "🌙")),
         )
         var p = physics
-        repeat(200) { p = p.step(gravityY = 5f, dt = 0.1f) }
+        repeat(200) { p = p.step(dt = 0.1f) }
         val b = p.bubbles.first()
         assertTrue("y=${b.y} 应 <= 窗台上界 $maxY", b.y <= maxY)
     }
