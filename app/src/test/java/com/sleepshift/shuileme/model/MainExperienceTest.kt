@@ -1,6 +1,7 @@
 package com.sleepshift.shuileme.model
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -42,58 +43,102 @@ class MainExperienceTest {
     // ── PersonaBubblePhysics ──
 
     @Test
-    fun `气泡受重力下落并在底部弹跳`() {
+    fun `气泡受重力下落并在底部弹跳且不越出可视边界`() {
+        val maxY = 200f - PersonaBubblePhysics.BUBBLE_SIZE
         val physics = PersonaBubblePhysics(
             width = 100f, height = 200f,
             bubbles = listOf(Bubble(x = 10f, y = 10f, vy = 0f, emoji = "🌙")),
         )
-        // 多步后 y 应增大（下落）并最终不越界
         var p = physics
         repeat(200) { p = p.step(gravityY = 5f, dt = 0.1f) }
         val b = p.bubbles.first()
         assertTrue("y 应 >= 0", b.y >= 0f)
-        assertTrue("y 应 <= height", b.y <= physics.height)
+        assertTrue("y 应 <= maxY（不出界）", b.y <= maxY)
+        // 四壁反射后速度不恒为 0（弹跳）
+        var p2 = physics.copy(bubbles = listOf(Bubble(x = 1f, y = 1f, vx = 8f, vy = 0f, emoji = "🌙")))
+        repeat(10) { p2 = p2.step(gravityY = 5f, dt = 0.1f) }
+        val b2 = p2.bubbles.first()
+        assertTrue(b2.x in 0f..(100f - PersonaBubblePhysics.BUBBLE_SIZE))
     }
 
     @Test
-    fun `散布确定性且坐标在边界内`() {
+    fun `散布确定性且坐标在四壁边界内`() {
         val emojis = listOf("🌙", "🐱", "🌞")
         val a = PersonaBubblePhysics.scatter(emojis, 100f, 200f, seed = 7)
         val b = PersonaBubblePhysics.scatter(emojis, 100f, 200f, seed = 7)
         assertEquals(a, b)
+        val maxX = 100f - PersonaBubblePhysics.BUBBLE_SIZE
+        val maxY = 200f - PersonaBubblePhysics.BUBBLE_SIZE
         a.forEach { bubble ->
-            assertTrue(bubble.x in 0f..100f)
-            assertTrue(bubble.y in 0f..200f)
+            assertTrue("x=${bubble.x} 应在 [0,$maxX]", bubble.x in 0f..maxX)
+            assertTrue("y=${bubble.y} 应在 [0,$maxY]", bubble.y in 0f..maxY)
         }
         // 不同 seed 散布不同
         val c = PersonaBubblePhysics.scatter(emojis, 100f, 200f, seed = 8)
         assertTrue(a != c)
     }
 
-    // ── SleepGestureTrigger ──
+    // ── SleepGestureTrigger（SL-9 蓄力状态机）──
 
     @Test
-    fun `长按达标进入READY 短按不误触`() {
+    fun `点击到蓄力再到完成一圈`() {
         var g = SleepGestureTrigger()
-        g = g.onDown(0L)
+        g = g.onPress()
         assertEquals(SleepGestureState.PRESSED, g.state)
-        g = g.onTick(300L, longPressThreshold = 500L) // 未达标
-        assertEquals(SleepGestureState.PRESSED, g.state)
-        g = g.onTick(600L, longPressThreshold = 500L) // 达标
-        assertEquals(SleepGestureState.READY, g.state)
+        g = g.onLongPress()
+        assertEquals(SleepGestureState.CHARGING, g.state)
+        assertEquals(0f, g.chargeProgress, 0f)
+        g = g.onCharge(0.5f)
+        assertEquals(0.5f, g.chargeProgress, 0.001f)
+        g = g.onCharge(1.5f) // 钳制
+        assertEquals(1f, g.chargeProgress, 0.001f)
+        g = g.onChargeComplete()
+        assertEquals(SleepGestureState.COMPLETED, g.state)
+        assertEquals(1f, g.chargeProgress, 0f)
     }
 
     @Test
-    fun `确认与取消`() {
-        var g = SleepGestureTrigger().onDown(0L).onTick(600L, 500L)
-        g = g.onConfirm()
-        assertEquals(SleepGestureState.CONFIRMED, g.state)
-        // 非 READY 不能确认
-        var g2 = SleepGestureTrigger().onDown(0L)
-        g2 = g2.onConfirm()
-        assertEquals(SleepGestureState.PRESSED, g2.state)
-        // 取消回到 IDLE
-        var g3 = SleepGestureTrigger().onDown(0L).onTick(600L, 500L).onCancel()
-        assertEquals(SleepGestureState.IDLE, g3.state)
+    fun `取消回到IDLE且进度清零`() {
+        val g = SleepGestureTrigger().onPress().onLongPress().onCharge(0.6f).onCancel()
+        assertEquals(SleepGestureState.IDLE, g.state)
+        assertEquals(0f, g.chargeProgress, 0f)
+    }
+
+    @Test
+    fun `未进入蓄力不能直接完成`() {
+        val g = SleepGestureTrigger().onPress().onChargeComplete()
+        assertEquals(SleepGestureState.PRESSED, g.state) // 未 CHARGING 不完成
+    }
+
+    // ── SL-9.1 ──
+
+    @Test
+    fun `牛马型单emoji排版不影响布局`() {
+        assertEquals("🐮", PersonalityCardGenerator.personalityPairEmoji(SleepPersonalityType.WORK_HORSE))
+        assertFalse(PersonalityCardGenerator.personalityPairEmoji(SleepPersonalityType.WORK_HORSE).contains("🐴"))
+        assertEquals("🌙🐱", PersonalityCardGenerator.personalityPairEmoji(SleepPersonalityType.NIGHT_OWL))
+    }
+
+    @Test
+    fun `无传感器降级为模拟重力`() {
+        val g = resolveGravity(null)
+        assertEquals(0f, g.first, 0f)
+        assertTrue("默认应下坠", g.second > 0f)
+        // 有传感器：倾斜影响 X
+        val tilted = resolveGravity(0.5f to 0f)
+        assertTrue(tilted.first > 0f)
+    }
+
+    @Test
+    fun `气泡不越过月亮窗台`() {
+        val maxY = 200f - PersonaBubblePhysics.BUBBLE_SIZE - 40f
+        val physics = PersonaBubblePhysics(
+            width = 100f, height = 200f, insetBottom = 40f,
+            bubbles = listOf(Bubble(x = 10f, y = 10f, vy = 0f, emoji = "🌙")),
+        )
+        var p = physics
+        repeat(200) { p = p.step(gravityY = 5f, dt = 0.1f) }
+        val b = p.bubbles.first()
+        assertTrue("y=${b.y} 应 <= 窗台上界 $maxY", b.y <= maxY)
     }
 }

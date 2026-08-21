@@ -85,13 +85,35 @@
   - **通知**：非侵入式（IMPORTANCE_LOW、无声音震动）「睡眠模式已启动 / 正常时间已恢复」，触发 SHIFT/RESTORE 时发送
   - 约束遵守：**未重构 Scheduler/Receiver/DataStore**；仅新增 onboarding 标志（DataStore 追加键）+ 通知侧调用
 
+### Phase 11：Shizuku 时区通道（2026-08-21）
+- [x] **Phase 11-A：TimeShiftEngine 抽象层**（`assembleDebug` ✅ + SleepShift_AVD_v2 启动验证 ✅）
+  - 新增 `engine` 包：`TimeShiftEngine`（接口）/ `TimeShiftResult` / `EngineType`（DEVICE_OWNER/SHIZUKU/ROOT/NONE）/ `EngineManager`（按优先级选引擎：Shizuku > Device Owner，Root 留 M2）
+  - `TimezoneScheduler` 解耦 `DeviceOwner.setTimeZone` → `timeShiftEngine` 注入（applyShift/applyRestore 统一走引擎）
+  - `DeviceOwner` 补 `setAutoTimeZone`；`SleepShiftApplication` 接线 `EngineManager`；Device Owner 能力保留未删
+- [x] **Phase 11-B：Shizuku 能力层**（`assembleDebug` ✅ + SleepShift_AVD_v2 验证 ✅）
+  - 新增 `permission` 包：`ShizukuManager`（安装/运行/binder 检测）/ `ShizukuPermission`（授权状态 + requestPermission）/ `CapabilityState` / `CapabilityResolver`
+  - 依赖 `dev.rikka.shizuku:api:13.1.5` + `provider:13.1.5`；Manifest 注册 `ShizukuProvider`
+  - `ShizukuTimeShiftEngine` 骨架（isAvailable/type）；EngineManager 注册 Shizuku（优先）
+  - `DebugActivity` 能力调试页（独立 Activity，主流程加「开发测试」临时入口）
+- [x] **Phase 11-C：Shizuku shell 实验 + 真机验证**（Redmi K80 + HyperOS ✅）
+  - `ShizukuTimeShiftEngine` 实现 shell 时区修改：`settings put global auto_time_zone` + `service call alarm 3 s16 "<zone>"`（IShizukuService.newProcess，捕获 exit/stdout/stderr）
+  - **真机验证成功**：Shizuku 安装/运行/授权 ✅、engine 执行时区命令 ✅、auto_time_zone 关闭 ✅、系统设置时区切换 ✅
+  - **遗留问题**：状态栏/SystemUI 时间未刷新（HyperOS 刷新/广播问题，**非权限问题**）
+- [x] **Phase 11-D：SystemUI 刷新修复 + Shizuku 授权引导**（`assembleDebug` ✅ + 单测 ✅）
+  - **D-A/B**：`setTimeZone` 成功后追加三类时钟刷新广播（TIMEZONE_CHANGED / TIME_SET / TIME_TICK，shell best-effort）+ `refreshSystemUiClock` 独立调试入口（DebugScreen「仅刷新 SystemUI」按钮）
+  - **D-C**：`AppCapabilities` 识别 Shizuku 通道（`timezoneControlReady` = Shizuku 或 Device Owner）；Onboarding Step 2 增 Shizuku 授权引导卡（未安装/未运行/未授权三态 + 授权按钮 + 结果监听实时重查）
+
 ## 当前开发阶段
 
-**项目已产品化**（阶段 6 收尾）
+> **⚠️ 产品方向调整（P12 起，2026-08-21）**：产品转型为「睡了么」——虚拟时间 + 心理暗示 + 娱乐化睡眠陪伴。
+> 系统时间操纵路线（Phase 11-C/D = P10/P11）**冻结**，不作主产品；旧代码保留。详见外层文档
+> `D:\AndroidDev\SleepShift_Product_Redesign.md` / `SleepShift_Product_State.md`。本文件为应用仓库内记录（旧编号 Phase 沿用）。
 
-- 引导 / 主页 / 配置 / 模式 / 通知 / 安全确认全部就绪并验证
-- 按用户指示不进入发布阶段
-- 待定：发布准备（签名 / release 构建）、真机验证、后续迭代
+**Phase 11-D（P11）代码完成**（系统时区路线已冻结）
+
+- Shizuku 时区通道真机可用（Redmi K80 + HyperOS），唯一遗留为 SystemUI 状态栏时间刷新（不再作主产品阻塞）
+- Phase 11-D 已实现：SystemUI 刷新广播 + Onboarding Shizuku 授权引导 + Debug Console（复制日志/诊断工具）
+- 下一步：**P12 Virtual Clock Engine**（纯计算虚拟时间，见外层设计文档）
 
 ## 遇到的问题
 
@@ -102,6 +124,7 @@
 - **环境变量**：当前 bash 会话不继承新设环境变量，命令行需显式 `JAVA_HOME='D:\AndroidDev\JDK\jdk-21.0.12.8'`。
 - **v2 恢复逻辑**：恢复按**显示时间**触发（真实 04:30 恢复 +120min 偏移，显示 06:30）。⚠️ 注意系统时区在偏移窗口内确实提前 2 小时。
 - **时区测试提醒**：测试会真的改模拟器系统时区，测完记得恢复。
+- **⚠️ HyperOS SystemUI 时间刷新（真机确认，Phase 11-D 已实现修复待验证）**：Redmi K80 上 `setTimeZone` 成功（settings 显示新时区）但状态栏时间不刷新。Phase 11-D 在 setTimeZone 后追加 TIMEZONE_CHANGED / TIME_SET / TIME_TICK 三类广播（best-effort）。若仍未生效，兜底方案是 Shizuku `killall com.android.systemui` 重启 SystemUI。
 
 ## 已修改的重要文件
 
@@ -132,7 +155,20 @@
 | `app/src/main/java/com/sleepshift/admin/DeviceOwner.kt` | DPM.setTimeZone 封装（DO 校验 + 自动关自动时区） |
 | `app/src/main/java/com/sleepshift/notify/NotificationHelper.kt` | 非侵入式通知（睡眠模式启动/恢复） |
 | `app/src/main/java/com/sleepshift/AppCapabilities.kt` | 能力状态检查（引导页用，普通语言呈现） |
-| `app/src/main/java/com/sleepshift/ui/onboarding/OnboardingScreen.kt` | 首次启动引导（3 步 + 状态检查 + 通知授权） |
+| `app/src/main/java/com/sleepshift/ui/onboarding/OnboardingScreen.kt` | 首次启动引导（3 步 + 状态检查 + 通知授权；Phase 11-D 加 Shizuku 授权引导卡） |
+| `app/src/main/java/com/sleepshift/engine/TimeShiftEngine.kt` | **引擎抽象接口**（Phase 11-A：type/isAvailable/setTimeZone/setAutoTimeZoneEnabled） |
+| `app/src/main/java/com/sleepshift/engine/EngineType.kt` | 引擎类型枚举（DEVICE_OWNER/SHIZUKU/ROOT/NONE） |
+| `app/src/main/java/com/sleepshift/engine/TimeShiftResult.kt` | 时区操作结果（引擎无关） |
+| `app/src/main/java/com/sleepshift/engine/EngineManager.kt` | 引擎管理器（按优先级选可用引擎） |
+| `app/src/main/java/com/sleepshift/engine/DeviceOwnerTimeShiftEngine.kt` | Device Owner 通道引擎（封装原 DeviceOwner） |
+| `app/src/main/java/com/sleepshift/engine/ShizukuTimeShiftEngine.kt` | **Shizuku 通道引擎**（Phase 11-C shell 实现；11-D 加 SystemUI 刷新广播） |
+| `app/src/main/java/com/sleepshift/permission/ShizukuManager.kt` | Shizuku 状态检测（安装/运行/版本；包名常量公开） |
+| `app/src/main/java/com/sleepshift/permission/ShizukuPermission.kt` | Shizuku 授权（状态 + requestPermission） |
+| `app/src/main/java/com/sleepshift/permission/CapabilityState.kt` | 应用能力状态（activeEngine 推导） |
+| `app/src/main/java/com/sleepshift/permission/CapabilityResolver.kt` | 综合能力解析（DO/Shizuku/Root） |
+| `app/src/main/java/com/sleepshift/AppCapabilities.kt` | 引导页能力检查（Phase 11-D：识别 Shizuku 通道） |
+| `app/src/main/java/com/sleepshift/DebugActivity.kt` | 能力 + Shizuku 时区测试调试页（独立 Activity） |
+| `app/src/main/java/com/sleepshift/ui/debug/DebugScreen.kt` | 调试页 UI（Phase 11-D 加「仅刷新 SystemUI」测试） |
 | `app/build.gradle.kts` | AGP 8.13.2 / compileSdk 36 / minSdk 26 / Compose / Java 17 / + datastore |
 | `gradle/libs.versions.toml` | 版本目录；BOM 锁定 `2025.08.00`；+ datastore 1.1.1 |
 | `settings.gradle.kts` | 阿里云 maven 镜像加速（官方源兜底） |
@@ -152,6 +188,12 @@
 | 4-C | 偏移粒度约束为整小时（settingsVersion v2 迁移） | ✅ 完成 |
 | 5 | 模拟器端到端验证（三模式 / 重启 / 边界，含修复） | ✅ 完成 |
 | 6 | 产品化 UI 与用户体验（引导 / 主页 / 配置 / 模式 / 通知 / 安全确认） | ✅ 完成 |
+| 11-A | TimeShiftEngine 抽象层（引擎解耦，Device Owner 保留） | ✅ 完成 |
+| 11-B | Shizuku 能力层（检测/授权/Debug 调试页/Provider） | ✅ 完成 |
+| 11-C | Shizuku shell 时区修改 + 真机验证（Redmi K80 ✅） | ✅ 完成（遗留 SystemUI 刷新） |
+| 11-D | SystemUI 刷新修复 + Shizuku 授权引导 | ✅ 代码完成（真机验证待确认） |
+
+> 注：阶段 7-10 为「模拟器检修 / 时区权限路线实验（WRITE_SETTINGS）」辅助工作，见 `D:\AndroidDev\CURRENT_STATE.md`，非应用功能阶段。v2 主线阶段 6 后直接进入 Phase 11（Shizuku 技术路线）。
 
 ## 下次继续开发时需要注意的事项
 
@@ -172,3 +214,6 @@
 - **模拟器当前残留状态**：`enabled=true`、`offsetMin=120`（阶段 4-C 滑条验证产物）、已武装、时区已恢复 GMT。
 - **JVM 单测**：`JAVA_HOME='D:\AndroidDev\JDK\jdk-21.0.12.8' ./gradlew.bat testDebugUnitTest`（纯计算验证，不依赖模拟器/真实时间）。
 - **POST_NOTIFICATIONS**：API 33+ 需运行时授权；引导页 Step 3 提供授权入口；模拟器也可 `adb shell pm grant com.sleepshift android.permission.POST_NOTIFICATIONS`。
+- **Shizuku 授权激活（真机无 root）**：需先用 adb 激活——`adb shell sh /sdcard/Android/data/moe.shizuku.privileged.api/start.sh`（或无线调试），之后在应用内/Shizuku 里授权给 SleepShift；重启后需重新激活。引擎可用 = Shizuku 运行 + 已授权。
+- **HyperOS SystemUI 刷新验证**：Phase 11-D 后，真机打开主界面「开发测试」→ DebugActivity →「仅刷新 SystemUI（测试广播）」可隔离验证哪条广播生效；兜底 `killall com.android.systemui`。
+- **真机验证入口**：主界面右上角「开发测试」临时按钮 → `DebugActivity`（能力状态 + 时区测试 + SystemUI 刷新测试）；正式发布前需移除该入口。

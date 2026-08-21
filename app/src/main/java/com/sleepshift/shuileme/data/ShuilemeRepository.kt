@@ -15,6 +15,7 @@ import com.sleepshift.shuileme.engine.VirtualClockEngine
 import com.sleepshift.shuileme.model.MoonEventPool
 import com.sleepshift.shuileme.model.MoonLife
 import com.sleepshift.shuileme.model.OnboardingState
+import com.sleepshift.shuileme.model.SleepPersonalityType
 import com.sleepshift.shuileme.model.MoonMood
 import com.sleepshift.shuileme.model.MoonProgress
 import com.sleepshift.shuileme.model.MoonStage
@@ -60,6 +61,8 @@ data class ShuilemeState(
     val moonProgress: MoonProgress = MoonProgress(),
     /** 目标入睡时间（当日 00:00 起分钟，如 23:00=1380），用于合格判定 */
     val targetSleepTimeMin: Int = DEFAULT_TARGET_SLEEP_TIME_MIN,
+    /** 目标起床时间（SL-9 睡眠窗口，如 07:00=420） */
+    val targetWakeTimeMin: Int = DEFAULT_TARGET_WAKE_TIME_MIN,
     /** 提醒配置（SL-4） */
     val reminderProfile: ReminderProfile = ReminderProfile(),
     /** 今晚放过我（SL-4）：active + 生效日 epochDay */
@@ -74,6 +77,8 @@ data class ShuilemeState(
     val onboarding: OnboardingState = OnboardingState(),
     /** 睡眠侦探（SL-7，弱信号） */
     val sleepDetectiveData: SleepDetectiveData = SleepDetectiveData(),
+    /** SL-9.1：真实重力互动开关（默认开启；无传感器自动降级） */
+    val gravityEnabled: Boolean = true,
 ) {
     val isSleeping: Boolean get() = state == SleepState.SLEEPING
     /** 由配置构造引擎配置（供 UI 计算虚拟时间） */
@@ -82,6 +87,7 @@ data class ShuilemeState(
 
     companion object {
         const val DEFAULT_TARGET_SLEEP_TIME_MIN = 1380 // 23:00
+        const val DEFAULT_TARGET_WAKE_TIME_MIN = 420   // 07:00
     }
 }
 
@@ -110,6 +116,7 @@ class ShuilemeRepository(private val context: Context) {
         val LAST_SESSION_JSON = stringPreferencesKey("last_session_json")
         // 月亮成长（SL-2-5）
         val TARGET_SLEEP_TIME_MIN = intPreferencesKey("target_sleep_time_min")
+        val TARGET_WAKE_TIME_MIN = intPreferencesKey("target_wake_time_min")
         val GROWTH_PERCENT = intPreferencesKey("growth_percent")
         val CONSECUTIVE_QUALIFIED = intPreferencesKey("consecutive_qualified")
         val TOTAL_COMPLETED_SLEEPS = intPreferencesKey("total_completed_sleeps")
@@ -141,10 +148,14 @@ class ShuilemeRepository(private val context: Context) {
         val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
         val ONBOARDING_PERSONALITY = intPreferencesKey("onboarding_personality")
         val ONBOARDING_TARGET_TIME = intPreferencesKey("onboarding_target_time")
+        val ONBOARDING_WAKE_TIME = intPreferencesKey("onboarding_wake_time")
+        val ONBOARDING_INITIAL_PERSONALITY = intPreferencesKey("onboarding_initial_personality")
         val ONBOARDING_TUTORIAL_DONE = booleanPreferencesKey("onboarding_tutorial_done")
         // 睡眠侦探（SL-7）
         val NIGHT_HINTS = intPreferencesKey("night_hints")
         val CHARGING_DURATION = longPreferencesKey("charging_duration")
+        // 重力互动（SL-9.1）
+        val GRAVITY_ENABLED = booleanPreferencesKey("gravity_enabled")
     }
 
     val state: Flow<ShuilemeState> = dataStore.data.map { p ->
@@ -162,6 +173,7 @@ class ShuilemeRepository(private val context: Context) {
             lastSession = decodeSession(p[Keys.LAST_SESSION_JSON]),
             moonProgress = readMoonProgress(p),
             targetSleepTimeMin = p[Keys.TARGET_SLEEP_TIME_MIN] ?: ShuilemeState.DEFAULT_TARGET_SLEEP_TIME_MIN,
+            targetWakeTimeMin = p[Keys.TARGET_WAKE_TIME_MIN] ?: ShuilemeState.DEFAULT_TARGET_WAKE_TIME_MIN,
             reminderProfile = ReminderProfile(
                 personality = ReminderPersonality.entries.getOrElse(p[Keys.PERSONALITY] ?: 0) { ReminderPersonality.MOON },
                 sleepReminderAdvanceMin = p[Keys.SLEEP_ADVANCE_MIN] ?: ReminderProfile().sleepReminderAdvanceMin,
@@ -189,7 +201,11 @@ class ShuilemeRepository(private val context: Context) {
                 completed = p[Keys.ONBOARDING_COMPLETED] ?: false,
                 selectedPersonality = ReminderPersonality.entries.getOrElse(p[Keys.ONBOARDING_PERSONALITY] ?: 0) { ReminderPersonality.MOON },
                 targetSleepTime = p[Keys.ONBOARDING_TARGET_TIME] ?: OnboardingState.DEFAULT_TARGET_SLEEP_TIME_MIN,
+                targetWakeTime = p[Keys.ONBOARDING_WAKE_TIME] ?: OnboardingState.DEFAULT_TARGET_WAKE_TIME_MIN,
                 virtualClockTutorialDone = p[Keys.ONBOARDING_TUTORIAL_DONE] ?: false,
+                initialPersonality = (p[Keys.ONBOARDING_INITIAL_PERSONALITY] ?: -1)
+                    .takeIf { it >= 0 }
+                    ?.let { SleepPersonalityType.entries.getOrNull(it) },
             ),
             sleepDetectiveData = SleepDetectiveData(
                 sleepStartTime = sessions.lastOrNull()?.sleepStartAtMs,
@@ -198,6 +214,7 @@ class ShuilemeRepository(private val context: Context) {
                 chargingDuration = p[Keys.CHARGING_DURATION] ?: 0,
                 nightActivityHints = p[Keys.NIGHT_HINTS] ?: 0,
             ),
+            gravityEnabled = p[Keys.GRAVITY_ENABLED] ?: true,
         )
     }
 
@@ -286,15 +303,31 @@ class ShuilemeRepository(private val context: Context) {
         dataStore.edit { p -> p[Keys.TARGET_SLEEP_TIME_MIN] = targetSleepTimeMin }
     }
 
-    /** 完成新用户体验（SL-4.5）：持久化引导状态 + 同步人格与目标入睡时间 */
+    /** SL-9.1：重力互动开关 */
+    suspend fun setGravityEnabled(enabled: Boolean) {
+        dataStore.edit { p -> p[Keys.GRAVITY_ENABLED] = enabled }
+    }
+
+    /** SL-9：设置目标睡眠窗口（入睡 + 起床） */
+    suspend fun setTargetSleepWindow(sleepTimeMin: Int, wakeTimeMin: Int) {
+        dataStore.edit { p ->
+            p[Keys.TARGET_SLEEP_TIME_MIN] = sleepTimeMin
+            p[Keys.TARGET_WAKE_TIME_MIN] = wakeTimeMin
+        }
+    }
+
+    /** 完成新用户体验（SL-4.5）：持久化引导状态 + 同步人格与目标睡眠窗口 */
     suspend fun completeOnboarding(selection: OnboardingState) {
         dataStore.edit { p ->
             p[Keys.ONBOARDING_COMPLETED] = true
             p[Keys.ONBOARDING_PERSONALITY] = selection.selectedPersonality.ordinal
             p[Keys.ONBOARDING_TARGET_TIME] = selection.targetSleepTime
+            p[Keys.ONBOARDING_WAKE_TIME] = selection.targetWakeTime
+            p[Keys.ONBOARDING_INITIAL_PERSONALITY] = selection.initialPersonality?.ordinal ?: -1
             p[Keys.ONBOARDING_TUTORIAL_DONE] = selection.virtualClockTutorialDone
             p[Keys.PERSONALITY] = selection.selectedPersonality.ordinal
             p[Keys.TARGET_SLEEP_TIME_MIN] = selection.targetSleepTime
+            p[Keys.TARGET_WAKE_TIME_MIN] = selection.targetWakeTime
         }
     }
 

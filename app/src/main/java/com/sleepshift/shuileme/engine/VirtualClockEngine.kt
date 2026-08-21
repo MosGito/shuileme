@@ -42,6 +42,32 @@ class VirtualClockEngine(private val config: VirtualClockConfig = VirtualClockCo
         realTimeMs + config.clampedOffsetMin * 60_000L
 
     /**
+     * SL-9：目标睡眠窗口内虚拟时间。
+     * 在 [sleepStartMin, wakeMin)（当日分钟，可跨午夜）内：真实时间 + 偏移；窗口外：真实时间。
+     */
+    fun isInSleepWindow(
+        realTimeMs: Long,
+        sleepStartMin: Int,
+        wakeMin: Int,
+        zone: ZoneId = ZoneId.systemDefault(),
+    ): Boolean {
+        val m = minutesOfDay(realTimeMs, zone)
+        return if (wakeMin > sleepStartMin) m >= sleepStartMin && m < wakeMin
+        else m >= sleepStartMin || m < wakeMin // 跨午夜
+    }
+
+    /** 窗口化虚拟时间：窗口内 = 真实 + 偏移；窗口外 = 真实 */
+    fun virtualTimeMs(
+        realTimeMs: Long,
+        sleepStartMin: Int,
+        wakeMin: Int,
+        zone: ZoneId = ZoneId.systemDefault(),
+    ): Long =
+        if (isInSleepWindow(realTimeMs, sleepStartMin, wakeMin, zone))
+            realTimeMs + config.clampedOffsetMin * 60_000L
+        else realTimeMs
+
+    /**
      * 某夜有效偏移（dayIndex 从 0 开始，0=今夜）。
      * - FIXED：恒为目标偏移；
      * - GRADUAL：min(目标, step × (dayIndex+1))，逐日递增至目标封顶；
@@ -69,6 +95,12 @@ class VirtualClockEngine(private val config: VirtualClockConfig = VirtualClockCo
         val virtual = TIME_FMT.format(Instant.ofEpochMilli(virtualTimeMs(realTimeMs)).atZone(zoneId))
         val real = TIME_FMT.format(Instant.ofEpochMilli(realTimeMs).atZone(zoneId))
         return virtual to real
+    }
+
+    /** 当日分钟数（0..1439） */
+    private fun minutesOfDay(ms: Long, zone: ZoneId): Int {
+        val zdt = Instant.ofEpochMilli(ms).atZone(zone)
+        return zdt.hour * 60 + zdt.minute
     }
 
     /** 确定性伪随机：[-range, +range]，同一 (dayIndex, seed) 恒定 */

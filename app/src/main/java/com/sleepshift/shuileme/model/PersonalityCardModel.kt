@@ -29,6 +29,29 @@ object PersonalityCardGenerator {
     const val MIN_SESSIONS = 5
     private const val LOCKED_COPY = "再睡几晚，解锁你的睡眠人格 🌙"
 
+    /** SL-9.3：初始人格倾向卡（由自报作息生成，低置信度；立即可查看，5 晚用于正式升级） */
+    fun generateInitial(
+        type: SleepPersonalityType,
+        sleepTimeMin: Int,
+        wakeTimeMin: Int,
+    ): PersonalityCardModel {
+        val window = if (wakeTimeMin > sleepTimeMin) wakeTimeMin - sleepTimeMin
+        else (24 * 60 - sleepTimeMin) + wakeTimeMin
+        return PersonalityCardModel(
+            personalityType = type,
+            emojiDecoration = decorateEmojis(type, sleepTimeMin),
+            title = "${type.displayName}型",
+            description = "你的初始睡眠人格倾向（低置信度）——睡满 5 晚升级正式人格。",
+            averageSleepTime = formatTime(sleepTimeMin),
+            averageWakeTime = formatTime(wakeTimeMin),
+            averageDuration = formatDuration(window.toLong()),
+            regularityScore = 50,
+            generatedDate = LocalDate.now().toString(),
+            unlocked = true,
+            nightsNeeded = 0,
+        )
+    }
+
     fun generate(state: ShuilemeState, personality: SleepPersonalityState): PersonalityCardModel {
         val type = personality.primaryType
         if (type == null) {
@@ -79,9 +102,17 @@ object PersonalityCardGenerator {
 
     fun lockedCopy(): String = LOCKED_COPY
 
-    /** 人格双 emoji 表示（如 🌙🐱） */
-    fun personalityPairEmoji(type: SleepPersonalityType): String =
-        type.primaryEmoji + type.comboEmojis.last()
+    /** 人格展示 emoji（SL-9.1：牛马型单 emoji 🐮，不影响布局） */
+    fun personalityPairEmoji(type: SleepPersonalityType): String = when (type) {
+        SleepPersonalityType.NIGHT_OWL -> "🌙🐱"
+        SleepPersonalityType.EARLY_BIRD -> "🌞🐦"
+        SleepPersonalityType.WORK_HORSE -> "🐮"
+        SleepPersonalityType.OTTER -> "🌊🦦"
+        SleepPersonalityType.CHAOS -> "🌪️"
+        SleepPersonalityType.MOON_GUARDIAN -> "🌕✨"
+        SleepPersonalityType.NIGHT_GHOST -> "🌚👻"
+        SleepPersonalityType.PROCASTINATOR -> "💤😴"
+    }
 
     private fun formatTime(minOfDay: Int?): String =
         minOfDay?.let { String.format("%02d:%02d", it / 60, it % 60) } ?: "--:--"

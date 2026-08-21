@@ -45,6 +45,23 @@ class SleepPersonalityTest {
     }
 
     @Test
+    fun `初始人格倾向由自报作息推算`() {
+        assertEquals(SleepPersonalityType.NIGHT_OWL, SleepPersonalityEngine.initialInclination(2 * 60, 9 * 60, 7 * 60))
+        assertEquals(SleepPersonalityType.EARLY_BIRD, SleepPersonalityEngine.initialInclination(22 * 60, 6 * 60, 8 * 60))
+        assertEquals(SleepPersonalityType.OTTER, SleepPersonalityEngine.initialInclination(23 * 60, 8 * 60, 8 * 60))
+    }
+
+    @Test
+    fun `目标偏差降低置信度`() {
+        val noDev = SleepPersonalityEngine.computeConfidence(10, 0.8)
+        val bigDev = SleepPersonalityEngine.computeConfidence(10, 0.8, 240L)
+        assertTrue(bigDev < noDev)
+        assertTrue(bigDev >= 0.0)
+        // 与默认兼容
+        assertEquals(SleepPersonalityEngine.computeConfidence(10, 0.8), noDev, 0.0001)
+    }
+
+    @Test
     fun `数据不足返回空人格且居民为月亮宝宝`() {
         val state = SleepPersonalityEngine.compute(PersonalityInput(sessions = List(3) { session(23, 8) }))
         assertNull(state.primaryType)

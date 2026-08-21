@@ -52,6 +52,8 @@ data class PersonalityInput(
     val sleepCount: Int = 0,
     val reminderResponseRate: Double? = null,
     val nightlyActiveCount: Int? = null,
+    /** SL-9：实际入睡 vs 目标入睡 平均偏差（分钟），影响规律度/置信度 */
+    val sleepTargetDeviationMin: Long? = null,
 )
 
 /** 人格计算输出 */
@@ -85,7 +87,7 @@ object SleepPersonalityEngine {
         }
         val metrics = computeMetrics(sessions)
         val primary = determineType(metrics)
-        val confidence = computeConfidence(sessions.size, metrics.regularityScore)
+        val confidence = computeConfidence(sessions.size, metrics.regularityScore, input.sleepTargetDeviationMin)
         val evolution = computeEvolution(input, metrics)
         val healthTarget = healthDirection(metrics)
         val unlocked = unlockedHidden(input)
@@ -108,6 +110,19 @@ object SleepPersonalityEngine {
         }
     }
 
+    /** SL-9：初始人格倾向（由用户自报作息推算，非真实数据；置信度由真实数据累计） */
+    fun initialInclination(sleepTimeMin: Int, wakeTimeMin: Int, idealSleepMin: Int): SleepPersonalityType {
+        val window = if (wakeTimeMin > sleepTimeMin) wakeTimeMin - sleepTimeMin
+        else (24 * 60 - sleepTimeMin) + wakeTimeMin
+        return determineType(
+            PersonalityMetrics(
+                avgSleepTimeMin = sleepTimeMin,
+                avgWakeTimeMin = wakeTimeMin,
+                avgDurationMin = window.toLong().coerceAtLeast(idealSleepMin.toLong()),
+            )
+        )
+    }
+
     fun computeMetrics(sessions: List<SleepSession>): PersonalityMetrics {
         val starts = sessions.mapNotNull { minutesOfDay(it.sleepStartAtMs) }
         val wakes = sessions.mapNotNull { it.wakeAtMs?.let { w -> minutesOfDay(w) } }
@@ -120,8 +135,12 @@ object SleepPersonalityEngine {
         )
     }
 
-    fun computeConfidence(sessionCount: Int, regularity: Double): Double =
-        (0.4 + sessionCount * 0.03 + regularity * 0.3).coerceIn(0.0, 0.95)
+    fun computeConfidence(sessionCount: Int, regularity: Double, targetDeviationMin: Long? = null): Double {
+        var conf = 0.4 + sessionCount * 0.03 + regularity * 0.3
+        // SL-9：实际入睡偏离目标越多，置信度越低（最多扣 0.2）
+        targetDeviationMin?.let { conf -= min(0.2, it / 1200.0) }
+        return conf.coerceIn(0.0, 0.95)
+    }
 
     /** 进化进度 0~1：规律度 + 连续 + 月亮成长（阶段代理）+ 少熬夜 */
     fun computeEvolution(input: PersonalityInput, metrics: PersonalityMetrics): Double {

@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import com.sleepshift.shuileme.model.PersonalityCardGenerator
 import kotlinx.coroutines.launch
 import com.sleepshift.shuileme.model.PersonalityCardModel
+import com.sleepshift.shuileme.model.ResidentEngine
 import com.sleepshift.shuileme.model.SleepPersonalityType
 
 /**
@@ -101,26 +102,32 @@ fun PersonalityCardScreen(
 @Composable
 private fun CardContent(model: PersonalityCardModel) {
     val type = model.personalityType ?: return
+    // 外围人格气泡装饰（SL-9.3：只作装饰，不进标题）
+    val decoration = ResidentEngine.bubbleEmojis(type, 6, model.generatedDate.hashCode())
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(20.dp))
-            .padding(20.dp),
+            .background(ShuilemeNight.CardStrong, RoundedCornerShape(28.dp))
+            .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("睡了么", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(12.dp))
-        Text(PersonalityCardGenerator.personalityPairEmoji(type), fontSize = 40.sp)
+        // 装饰气泡行
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            decoration.take(3).forEach { Text(it, fontSize = 28.sp) }
+        }
+        Spacer(Modifier.height(16.dp))
+        Text("你的睡眠人格是", fontSize = 24.sp, color = ShuilemeNight.TextSecondary)
         Text(
             model.title,
-            style = MaterialTheme.typography.headlineSmall,
+            fontSize = 40.sp,
             fontWeight = FontWeight.Bold,
+            color = ShuilemeNight.TextPrimary,
         )
         Spacer(Modifier.height(8.dp))
         Text(
             model.description,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 16.sp,
+            color = ShuilemeNight.TextSecondary,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(16.dp))
@@ -129,14 +136,14 @@ private fun CardContent(model: PersonalityCardModel) {
         DataRow("💤", "平均睡眠", model.averageDuration)
         DataRow("📈", "规律程度", "${model.regularityScore}%")
         Spacer(Modifier.height(16.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            model.emojiDecoration.forEach { Text(it, fontSize = 24.sp) }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            decoration.drop(3).forEach { Text(it, fontSize = 28.sp) }
         }
         Spacer(Modifier.height(12.dp))
         Text(
             "睡了么 · 一个假装时间变晚的小工具",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 14.sp,
+            color = ShuilemeNight.TextSecondary,
         )
     }
 }
@@ -151,7 +158,7 @@ private fun DataRow(emoji: String, label: String, value: String) {
     ) {
         Text(emoji, fontSize = 16.sp)
         Spacer(Modifier.width(8.dp))
-        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-        Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+        Text(label, fontSize = 16.sp, color = ShuilemeNight.TextSecondary, modifier = Modifier.weight(1f))
+        Text(value, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = ShuilemeNight.TextPrimary)
     }
 }

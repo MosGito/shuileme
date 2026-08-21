@@ -163,3 +163,38 @@
 - **验证**：模拟器全流程——引导三步完成进入主界面、引导持久化（重启不再显示）、主页状态/计划卡/关闭弹窗、配置解释文本、模式说明+适合人群、SHIFT/RESTORE 通知 ✅；单测 12/12。
 - **小坑**：引导 Step 3 通知授权按钮的 `notificationGranted` 初始状态需查真实权限（`ContextCompat.checkSelfPermission`），否则已授权也显示按钮；Compose 局部变量引用顺序（context 声明在状态初始化之前）。
 - **未在模拟器验证**：配置页"睡眠模式中修改"Snackbar——需处于活动睡眠窗口（当前模拟器时间不在窗口内），逻辑简单已代码确认。
+
+---
+
+## 2026-08-21
+
+### 14. Phase 11-A：TimeShiftEngine 抽象层
+
+- **日期**：2026-08-21
+- **背景**：旧 Device Owner 通道在非 DO 环境（普通 ROM / HyperOS）不可用，需引入 Shizuku/Root 多执行模式。先抽象引擎层，保证现有 DO 能力不退化。
+- **改动**：新增 `engine` 包——`TimeShiftEngine`（type/isAvailable/setTimeZone/setAutoTimeZoneEnabled）、`TimeShiftResult`（引擎无关结果）、`EngineType`（DEVICE_OWNER/SHIZUKU/ROOT/NONE）、`EngineManager`（按优先级选引擎：Shizuku > Device Owner > 无）、`DeviceOwnerTimeShiftEngine`（封装原 DeviceOwner 逻辑）。`TimezoneScheduler` 构造注入 `TimeShiftEngine`（不再直接依赖 DeviceOwner），applyShift/applyRestore 统一走引擎。`SleepShiftApplication` 接线 `engineManager`。`DeviceOwner` 补 `setAutoTimeZone`。
+- **验证**：`assembleDebug` ✅；SleepShift_AVD_v2 安装/启动验证（Status:ok、进程存活、无崩溃）✅。
+- **提交**：`2cb975d`（8 文件 / 153 行）。
+
+### 15. Phase 11-B：Shizuku 能力层
+
+- **日期**：2026-08-21
+- **改动**：新增 `permission` 包——`ShizukuManager`（安装/运行/binder 状态检测，只读）、`ShizukuPermission`（isGranted / requestPermission）、`CapabilityState`（activeEngine 推导）、`CapabilityResolver`（综合能力聚合）。依赖 `dev.rikka.shizuku:api:13.1.5` + `provider:13.1.5`。Manifest 注册 `ShizukuProvider`（authorities=`${applicationId}.shizuku`）。`ShizukuTimeShiftEngine` 骨架（isAvailable = 运行 + 已授权；setTimeZone 未实现）。EngineManager 注册 Shizuku（优先）+ Device Owner。`DebugActivity` 能力调试页。
+- **验证**：`assembleDebug` ✅；SleepShift_AVD_v2 验证（activeEngine=NONE、无崩溃、主流程无回归、ShizukuProvider 优雅初始化）✅。
+- **提交**：`6b1dde8`（10 文件 / 275 行）。
+
+### 16. Phase 11-C：Shizuku shell 时区修改 + 真机验证
+
+- **日期**：2026-08-21
+- **实现**：`ShizukuTimeShiftEngine.setTimeZone` 通过 `IShizukuService.newProcess` 以 `sh -c` 执行 `settings put global auto_time_zone 0` + `service call alarm 3 s16 "<zone>"`；捕获 exit/stdout/stderr；`setAutoTimeZoneEnabled` 同理。DebugActivity 加启动自检 + DebugScreen 时区测试入口；主界面加「开发测试」临时入口。
+- **⚠️ 真机验证（Redmi K80 + HyperOS）**：Shizuku 安装/运行/授权 ✅、engine 执行时区命令 ✅、auto_time_zone 关闭 ✅、系统设置时区切换 ✅。
+- **⚠️ 遗留问题（非权限）**：状态栏/SystemUI 时间不刷新（仍显示原时间）。定位：HyperOS timezone refresh/broadcast/SystemUI cache 问题。→ Phase 11-D 处理。
+- **环境发现**：模拟器（SleepShift_AVD_v2）无 Shizuku，DebugActivity 自检正确失败（SELFTEST success=false）。
+
+### 17. Phase 11-D：SystemUI 刷新修复 + Shizuku 授权引导
+
+- **日期**：2026-08-21
+- **D-A/B（SystemUI 刷新）**：`ShizukuTimeShiftEngine.setTimeZone` 成功后追加三类时钟刷新广播（shell best-effort）：`TIMEZONE_CHANGED`（--es time-zone）、`TIME_SET`、`TIME_TICK`；新增公开 `refreshSystemUiClock(zoneId)` 独立调试入口；DebugScreen 增「仅刷新 SystemUI（测试广播）」按钮，真机可隔离验证哪条广播对 HyperOS 生效。时区修改成功仍判成功（刷新失败不影响主操作判定）。
+- **D-C（Shizuku 授权引导）**：`AppCapabilities` 识别 Shizuku 通道（`timezoneControlReady` = Shizuku 授权或 Device Owner；`timezoneControlDesc` 展示当前通道）；Onboarding Step 2 增 `ShizukuGuideCard`——未安装（前往 shizuku.rikka.app）/ 未运行（打开 Shizuku 应用）/ 未授权（授权按钮）三态引导 + 备选 Device Owner 说明；`Shizuku.addRequestPermissionResultListener` 授权后自动重查状态；`ShizukuManager.SHIZUKU_PACKAGE` 公开供引导页使用。
+- **验证**：`assembleDebug` ✅（39 tasks）；`testDebugUnitTest` ✅（12/12 无回归）。
+- **待真机确认**：D-A/B 三条广播对 HyperOS 状态栏的实际生效情况；D-C 授权向导实机走查。兜底方案：`killall com.android.systemui` 重启 SystemUI。

@@ -13,7 +13,7 @@ import rikka.shizuku.Shizuku
 object ShizukuManager {
 
     /** Shizuku 应用包名（官方应用） */
-    private const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
+    const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
 
     /** Shizuku 是否已安装 */
     fun isShizukuInstalled(context: Context): Boolean =

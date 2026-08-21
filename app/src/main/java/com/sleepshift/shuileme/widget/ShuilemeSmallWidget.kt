@@ -40,7 +40,8 @@ class ShuilemeSmallWidget : GlanceAppWidget() {
     override val sizeMode: SizeMode = SizeMode.Single
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val state = ShuilemeRepository(context).current()
+        // SL-9.2：防御性加载（读取失败回退默认，保证组件始终可渲染）
+        val state = ShuilemeWidgets.loadWidgetState(context)
         val nowMs = System.currentTimeMillis()
         provideContent { SmallContent(state, nowMs) }
     }

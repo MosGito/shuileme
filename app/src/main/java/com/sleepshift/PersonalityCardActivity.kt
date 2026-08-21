@@ -44,7 +44,14 @@ class PersonalityCardActivity : ComponentActivity() {
                             sleepCount = state.sleepCount,
                         )
                     )
-                    model = PersonalityCardGenerator.generate(state, personality)
+                    model = if (personality.primaryType != null) {
+                        PersonalityCardGenerator.generate(state, personality)
+                    } else {
+                        // SL-9.3：初始人格倾向立即可查看（低置信度）
+                        state.onboarding.initialPersonality?.let { initial ->
+                            PersonalityCardGenerator.generateInitial(initial, state.targetSleepTimeMin, state.targetWakeTimeMin)
+                        } ?: PersonalityCardGenerator.generate(state, personality)
+                    }
                 }
                 val m = model
                 if (m == null) {

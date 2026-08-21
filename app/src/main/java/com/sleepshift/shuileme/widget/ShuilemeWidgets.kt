@@ -8,6 +8,9 @@ import android.content.Intent
 import android.os.SystemClock
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetManager
+import com.sleepshift.shuileme.data.ShuilemeRepository
+import com.sleepshift.shuileme.data.ShuilemeState
+import com.sleepshift.shuileme.reminder.SleepCapsule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -26,6 +29,10 @@ object ShuilemeWidgets {
             runCatching { refreshWidget(context, ShuilemeMediumWidget(), ShuilemeMediumWidget::class.java) }
         }
     }
+
+    /** SL-9.2：防御性加载组件状态（读取失败回退默认，保证组件始终可渲染） */
+    suspend fun loadWidgetState(context: Context): ShuilemeState =
+        runCatching { ShuilemeRepository(context).current() }.getOrElse { ShuilemeState() }
 
     private suspend fun refreshWidget(context: Context, widget: GlanceAppWidget, clazz: Class<out GlanceAppWidget>) {
         val manager = GlanceAppWidgetManager(context)
@@ -59,7 +66,11 @@ class ShuilemeWidgetRefreshReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             Intent.ACTION_BOOT_COMPLETED -> ShuilemeWidgetRefreshScheduler.schedule(context)
-            ShuilemeWidgetRefreshScheduler.ACTION_REFRESH -> ShuilemeWidgets.refreshAll(context)
+            ShuilemeWidgetRefreshScheduler.ACTION_REFRESH -> {
+                ShuilemeWidgets.refreshAll(context)
+                // SL-9.2：周期刷新睡眠胶囊（更新虚拟时间/月亮）
+                CoroutineScope(Dispatchers.IO).launch { SleepCapsule.refresh(context) }
+            }
         }
     }
 }

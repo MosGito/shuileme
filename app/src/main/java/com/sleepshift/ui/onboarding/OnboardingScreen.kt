@@ -1,11 +1,13 @@
 package com.sleepshift.ui.onboarding
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,12 +21,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -37,12 +41,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.sleepshift.AppCapabilities
+import com.sleepshift.permission.ShizukuManager
+import com.sleepshift.permission.ShizukuPermission
+import rikka.shizuku.Shizuku
 
 /**
  * 首次启动引导（三步）：
  * 1. 理念介绍（普通语言）
- * 2. 能力检查（系统时间控制权限 / 自动时间设置 / 精确闹钟）
+ * 2. 能力检查（系统时间控制权限 / 自动时间设置 / 精确闹钟；含 Shizuku 授权引导）
  * 3. 就绪 + 通知授权 + 开始使用
  */
 @Composable
@@ -60,6 +68,23 @@ fun OnboardingScreen(onFinish: () -> Unit) {
         )
     }
 
+    // Shizuku 授权结果监听（Phase 11-D）：授权/拒绝后立即重查能力状态
+    DisposableEffect(Unit) {
+        val listener = object : Shizuku.OnRequestPermissionResultListener {
+            override fun onRequestPermissionResult(requestCode: Int, grantResult: Int) {
+                if (requestCode == ShizukuPermission.REQUEST_CODE) {
+                    status = AppCapabilities.check(context)
+                }
+            }
+        }
+        Shizuku.addRequestPermissionResultListener(listener)
+        onDispose { Shizuku.removeRequestPermissionResultListener(listener) }
+    }
+
+    fun refreshStatus() {
+        status = AppCapabilities.check(context)
+    }
+
     val notifLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -67,7 +92,7 @@ fun OnboardingScreen(onFinish: () -> Unit) {
     }
 
     LaunchedEffect(step) {
-        if (step == 2) status = AppCapabilities.check(context)
+        if (step == 2) refreshStatus()
     }
 
     Column(
@@ -83,7 +108,11 @@ fun OnboardingScreen(onFinish: () -> Unit) {
         ) {
             when (step) {
                 1 -> IntroContent()
-                2 -> StatusContent(status)
+                2 -> StatusContent(
+                    status = status,
+                    onGrantShizuku = { ShizukuPermission.requestPermission() },
+                    onOpenShizuku = { openShizukuApp(context) },
+                )
                 3 -> ReadyContent(status, notificationGranted, notifLauncher::launch)
             }
         }
@@ -128,13 +157,22 @@ fun OnboardingScreen(onFinish: () -> Unit) {
         }
         if (step == 2) {
             OutlinedButton(
-                onClick = { status = AppCapabilities.check(context) },
+                onClick = { refreshStatus() },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("重新检查")
             }
         }
     }
+}
+
+/** 打开 Shizuku 应用；未安装时打开官方站点 */
+private fun openShizukuApp(context: Context) {
+    val intent = context.packageManager
+        .getLaunchIntentForPackage(ShizukuManager.SHIZUKU_PACKAGE)
+        ?: Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/"))
+    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    context.startActivity(intent)
 }
 
 @Composable
@@ -163,7 +201,11 @@ private fun IntroContent() {
 }
 
 @Composable
-private fun StatusContent(status: AppCapabilities.Status?) {
+private fun StatusContent(
+    status: AppCapabilities.Status?,
+    onGrantShizuku: () -> Unit,
+    onOpenShizuku: () -> Unit,
+) {
     Text(
         text = "检查手机状态",
         style = MaterialTheme.typography.headlineMedium,
@@ -176,10 +218,13 @@ private fun StatusContent(status: AppCapabilities.Status?) {
     } else {
         StatusRow(
             title = "系统时间控制权限",
-            ok = status.deviceOwnerGranted,
-            okText = "已授权",
-            failText = "未授权（需管理员安装本应用）",
+            ok = status.timezoneControlReady,
+            okText = status.timezoneControlDesc,
+            failText = "未授权",
         )
+        if (!status.timezoneControlReady) {
+            ShizukuGuideCard(status, onGrantShizuku, onOpenShizuku)
+        }
         StatusRow(
             title = "自动时间设置",
             ok = !status.autoTimeZoneEnabled,
@@ -191,6 +236,69 @@ private fun StatusContent(status: AppCapabilities.Status?) {
             ok = status.exactAlarmGranted,
             okText = "已开启",
             failText = "未开启（请在系统设置中允许）",
+        )
+    }
+}
+
+/**
+ * Shizuku 授权引导卡（仅当时区控制未就绪时显示）。
+ * 按「未安装 / 未运行 / 未授权」三态给出对应操作。
+ */
+@Composable
+private fun ShizukuGuideCard(
+    status: AppCapabilities.Status,
+    onGrantShizuku: () -> Unit,
+    onOpenShizuku: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
+            .padding(12.dp),
+    ) {
+        Text("通过 Shizuku 授权", style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.height(4.dp))
+        when {
+            !status.shizukuInstalled -> {
+                Text(
+                    text = "未检测到 Shizuku。请先安装（shizuku.rikka.app），然后回来重新检查。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(onClick = onOpenShizuku, modifier = Modifier.fillMaxWidth()) {
+                    Text("前往 Shizuku")
+                }
+            }
+            !status.shizukuRunning -> {
+                Text(
+                    text = "Shizuku 已安装但服务未运行。请打开 Shizuku 并启动服务（无 root 设备需先用 adb 激活，见下方说明）。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(onClick = onOpenShizuku, modifier = Modifier.fillMaxWidth()) {
+                    Text("打开 Shizuku")
+                }
+            }
+            else -> {
+                Text(
+                    text = "Shizuku 运行中，但尚未授权给 SleepShift。点击下方按钮完成授权。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(onClick = onGrantShizuku, modifier = Modifier.fillMaxWidth()) {
+                    Text("授权 Shizuku")
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "备选方式：以设备管理员安装本应用（需 adb），同样可获得时间控制权限。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

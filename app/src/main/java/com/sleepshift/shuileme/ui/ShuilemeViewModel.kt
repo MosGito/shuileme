@@ -15,7 +15,9 @@ import com.sleepshift.shuileme.model.ResidentTalkSystem
 import com.sleepshift.shuileme.model.SleepDetective
 import com.sleepshift.shuileme.model.SleepPersonalityEngine
 import com.sleepshift.shuileme.model.SleepPersonalityState
+import com.sleepshift.shuileme.model.SleepSession
 import com.sleepshift.shuileme.reminder.ReminderPersonality
+import com.sleepshift.shuileme.reminder.SleepCapsule
 import com.sleepshift.shuileme.reminder.ShuilemeReminderNotifier
 import com.sleepshift.shuileme.reminder.ShuilemeReminderScheduler
 import com.sleepshift.shuileme.widget.ShuilemeWidgets
@@ -70,6 +72,8 @@ class ShuilemeViewModel(
                     moonLife = s.moonLife,
                     streakDays = s.streakDays,
                     sleepCount = s.sleepCount,
+                    // SL-9：实际入睡 vs 目标入睡 偏差 → 影响规律度/置信度
+                    sleepTargetDeviationMin = targetDeviation(s.sessions, s.targetSleepTimeMin),
                 )
             )
         }
@@ -117,6 +121,18 @@ class ShuilemeViewModel(
         }
     }
 
+    /** SL-9：实际入睡 vs 目标入睡 平均偏差（分钟，含跨午夜取最小环） */
+    private fun targetDeviation(sessions: List<SleepSession>, targetMin: Int): Long? {
+        if (sessions.isEmpty()) return null
+        val devs = sessions.map { s ->
+            val zdt = Instant.ofEpochMilli(s.sleepStartAtMs).atZone(ZoneId.systemDefault())
+            val m = zdt.hour * 60 + zdt.minute
+            val raw = kotlin.math.abs(m - targetMin)
+            minOf(raw, 1440 - raw)
+        }
+        return devs.average().toLong()
+    }
+
     private fun todayEpochDay(nowMs: Long): Long =
         LocalDate.ofInstant(Instant.ofEpochMilli(nowMs), ZoneId.systemDefault()).toEpochDay()
 
@@ -133,6 +149,8 @@ class ShuilemeViewModel(
             val engine = VirtualClockEngine(current.toVirtualClockConfig())
             val offset = engine.effectiveOffsetMin(dayIndex = 0)
             repository.startSleep(nowMs, offset)
+            // SL-9.2：睡眠胶囊常驻通知
+            SleepCapsule.show(appContext, repository.current())
             ShuilemeWidgets.refreshAll(appContext)
         }
     }
@@ -143,6 +161,8 @@ class ShuilemeViewModel(
         if (!current.isSleeping) return
         viewModelScope.launch {
             repository.wakeUp(nowMs)
+            // SL-9.2：取消睡眠胶囊
+            SleepCapsule.cancel(appContext)
             // SL-4 起床反馈（遵守静默窗口，LOW 渠道）
             val fresh = repository.current()
             if (fresh.reminderProfile.enabledWakeFeedback) {
@@ -183,6 +203,19 @@ class ShuilemeViewModel(
             repository.setTargetSleepTime(targetSleepTimeMin)
             ShuilemeReminderScheduler.scheduleAll(appContext)
         }
+    }
+
+    /** SL-9：设置目标睡眠窗口（入睡 + 起床） */
+    fun setTargetSleepWindow(sleepTimeMin: Int, wakeTimeMin: Int) {
+        viewModelScope.launch {
+            repository.setTargetSleepWindow(sleepTimeMin, wakeTimeMin)
+            ShuilemeReminderScheduler.scheduleAll(appContext)
+        }
+    }
+
+    /** SL-9.1：重力互动开关 */
+    fun setGravityEnabled(enabled: Boolean) {
+        viewModelScope.launch { repository.setGravityEnabled(enabled) }
     }
 }
 

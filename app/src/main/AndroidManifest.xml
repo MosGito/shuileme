@@ -130,6 +130,15 @@
             </intent-filter>
         </receiver>
 
+        <!-- 睡眠胶囊（SL-9.2）：「我醒啦」动作 -->
+        <receiver
+            android:name=".shuileme.reminder.SleepCapsuleReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.sleepshift.action.CAPSULE_WAKE" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

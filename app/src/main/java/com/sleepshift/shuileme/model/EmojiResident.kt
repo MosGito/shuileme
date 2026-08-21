@@ -23,6 +23,28 @@ object ResidentEngine {
     const val MIN_RESIDENTS = 5
     const val MAX_RESIDENTS = 12
 
+    /**
+     * SL-9.2.1：Persona Bubble 符号（直接来自 SleepPersonalityType）。
+     * 夜猫子 🌙🐱 / 早起鸟 🌞🐦 / 牛马 🐮 / 海獭 🌊🦦 / 混沌 🌪️。
+     */
+    fun bubbleSymbols(type: SleepPersonalityType): List<String> = when (type) {
+        SleepPersonalityType.NIGHT_OWL -> listOf("🌙", "🐱")
+        SleepPersonalityType.EARLY_BIRD -> listOf("🌞", "🐦")
+        SleepPersonalityType.WORK_HORSE -> listOf("🐮", "🐴") // SL-9.3：随机 🐮 或 🐴
+        SleepPersonalityType.OTTER -> listOf("🌊", "🦦")
+        SleepPersonalityType.CHAOS -> listOf("🌪️")
+        SleepPersonalityType.MOON_GUARDIAN -> listOf("🌕", "✨")
+        SleepPersonalityType.NIGHT_GHOST -> listOf("🌚", "👻")
+        SleepPersonalityType.PROCASTINATOR -> listOf("💤", "😴")
+    }
+
+    /** 从人格类型生成装饰气泡（确定性，仅该人格符号，非随机月亮） */
+    fun bubbleEmojis(type: SleepPersonalityType, count: Int, seed: Int): List<String> {
+        if (count <= 0) return emptyList()
+        val symbols = bubbleSymbols(type)
+        return (0 until count).map { symbols[(it + seed) % symbols.size] }
+    }
+
     /** 月亮还在认识用户：5 个月亮宝宝 */
     fun moonBabies(): List<EmojiResident> = listOf(
         EmojiResident("🌑", SleepPersonalityType.CHAOS, 1, MoonMood.EXPECTANT, "安静", 1),
