@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Compose 项目使用无 ActionBar 的主题 -->
-    <style name="Theme.SleepShift" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- SL-9.4：深色 Material 主题 + 夜空窗口背景（禁白底/黑字） -->
+    <style name="Theme.SleepShift" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/night_sky</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
 </resources>

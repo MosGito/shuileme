@@ -2,7 +2,9 @@ package com.sleepshift
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -39,6 +41,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // SL-9.4：深色系统栏（透明夜空 + 浅色图标），消除白底状态/导航栏
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         // SL-3：桌面组件 15 分钟周期刷新（BOOT 由 RefreshReceiver 重排）
         ShuilemeWidgetRefreshScheduler.schedule(applicationContext)
         // SL-4：睡前提醒 + 熬夜检查点调度

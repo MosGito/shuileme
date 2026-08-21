@@ -40,7 +40,7 @@ object PersonalityCardGenerator {
         return PersonalityCardModel(
             personalityType = type,
             emojiDecoration = decorateEmojis(type, sleepTimeMin),
-            title = "${type.displayName}型",
+            title = type.displayName.removeSuffix("型") + "型",
             description = "你的初始睡眠人格倾向（低置信度）——睡满 5 晚升级正式人格。",
             averageSleepTime = formatTime(sleepTimeMin),
             averageWakeTime = formatTime(wakeTimeMin),
@@ -62,7 +62,7 @@ object PersonalityCardGenerator {
         return PersonalityCardModel(
             personalityType = type,
             emojiDecoration = decorateEmojis(type, state.sleepCount),
-            title = "${type.displayName}型",
+            title = type.displayName.removeSuffix("型") + "型",
             description = descriptionFor(type),
             averageSleepTime = formatTime(metrics.avgSleepTimeMin),
             averageWakeTime = formatTime(metrics.avgWakeTimeMin),

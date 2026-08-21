@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
@@ -59,18 +60,18 @@ private fun SmallContent(state: ShuilemeState, nowMs: Long) {
         modifier = GlanceModifier
             .fillMaxSize()
             .background(Color(0xFF16162B))
-            .padding(8)
+            .padding(8.dp)
             .clickable(openApp),
     ) {
         Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Vertical.CenterVertically) {
             Text(ShuilemeWidgetDisplay.moonEmoji(state, nowMs), style = TextStyle(fontSize = 15.sp))
-            Spacer(GlanceModifier.width(6))
+            Spacer(GlanceModifier.width(6.dp))
             Text(
                 ShuilemeWidgetDisplay.title(),
                 style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ColorProvider(Color(0xFFB8B8D0))),
             )
         }
-        Spacer(GlanceModifier.height(2))
+        Spacer(GlanceModifier.height(2.dp))
         Text(
             ShuilemeWidgetDisplay.virtualTimeText(state, nowMs),
             style = TextStyle(fontSize = 26.sp, fontWeight = FontWeight.Bold, color = ColorProvider(Color.White)),

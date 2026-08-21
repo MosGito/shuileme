@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#1A237E</color>
+    <!-- SL-9.4：夜空窗口背景 -->
+    <color name="night_sky">#FF14142B</color>
 </resources>
