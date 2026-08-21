@@ -27,6 +27,11 @@
             </intent-filter>
         </activity>
 
+        <!-- 人格分享卡片页（SL-6.5） -->
+        <activity
+            android:name=".PersonalityCardActivity"
+            android:exported="false" />
+
         <!-- 能力状态调试页（开发验证用，独立于主流程） -->
         <activity
             android:name=".DebugActivity"
@@ -40,6 +45,17 @@
             android:enabled="true"
             android:exported="true"
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <!-- 人格卡片分享 FileProvider（SL-6.5） -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- 设备管理员接收器：Device Owner 授权与回调必须用它 -->
         <receiver
@@ -66,6 +82,51 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 睡了么 2x1 小组件（SL-3） -->
+        <receiver
+            android:name=".shuileme.widget.ShuilemeSmallWidgetReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/shuileme_widget_small" />
+        </receiver>
+
+        <!-- 睡了么 4x2 中组件（SL-3） -->
+        <receiver
+            android:name=".shuileme.widget.ShuilemeMediumWidgetReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/shuileme_widget_medium" />
+        </receiver>
+
+        <!-- 组件周期刷新 + 开机重排（SL-3） -->
+        <receiver
+            android:name=".shuileme.widget.ShuilemeWidgetRefreshReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.sleepshift.action.WIDGET_REFRESH" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 睡眠提醒（SL-4）：睡前/熬夜检查点/今晚放过我 -->
+        <receiver
+            android:name=".shuileme.reminder.ShuilemeReminderReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.sleepshift.action.SLEEP_REMINDER" />
+                <action android:name="com.sleepshift.action.LATE_CHECKPOINT" />
+                <action android:name="com.sleepshift.action.NIGHT_OFF" />
             </intent-filter>
         </receiver>
 

@@ -59,6 +59,9 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     testImplementation(libs.junit)
 
+    // Jetpack Glance 桌面组件（SL-3）
+    implementation(libs.androidx.glance.appwidget)
+
     // Shizuku（Phase 11-B / M1：Shizuku Mode）
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
