@@ -3,6 +3,7 @@ package com.sleepshift.shuileme.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -11,8 +12,15 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -53,40 +61,44 @@ private fun NumberWheel(
 ) {
     val itemHeight = 40.dp
     val containerHeight = 140.dp
+    val halfPad = (containerHeight - itemHeight) / 2
     val density = LocalDensity.current
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = (selected - range.first).coerceAtLeast(0))
+    val listState = rememberLazyListState()
+    val centerOffset = with(density) { halfPad.toPx() }.toInt()
 
-    // 初始滚动到选中项居中
-    LaunchedEffect(Unit) {
-        val centerOffset = with(density) { ((containerHeight - itemHeight) / 2).toPx() }.toInt()
-        listState.scrollToItem((selected - range.first).coerceAtLeast(0), scrollOffset = centerOffset)
+    // SL-9.5 修复：
+    // - contentPadding 上下留半槽：首项（index=0）在 scroll=0 即天然居中，末项也能滚到中央；
+    // - 初始化只把 index>0 的选中项滚到中央（index=0 保持自然居中）；
+    // - 值上报与吸附都绑定「用户滚动结束」，初始化后不再触发，杜绝级联改默认值。
+    var initialized by remember { mutableStateOf(false) }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.layoutInfo.totalItemsCount }
+            .filter { it > 0 }
+            .first()
+        val index = (selected - range.first).coerceIn(0, range.count() - 1)
+        if (index > 0) {
+            listState.scrollToItem(index, scrollOffset = centerOffset)
+        }
+        initialized = true
     }
 
-    // 拖动/滚动 → 中央高亮项成为当前值（禁止点击）
-    LaunchedEffect(listState) {
-        snapshotFlow {
-            val info = listState.layoutInfo
-            val center = info.viewportStartOffset + (info.viewportEndOffset - info.viewportStartOffset) / 2f
-            info.visibleItemsInfo
-                .firstOrNull { center >= it.offset && center < it.offset + it.size }
-                ?.index
-                ?: listState.firstVisibleItemIndex
-        }.collect { idx -> onSelect(range.first + idx.coerceIn(0, range.count() - 1)) }
-    }
-
-    // 松手吸附：中央项精确居中（真轮盘手感）
-    LaunchedEffect(listState) {
+    // 中央高亮项判断（初始化后：仅在用户滚动结束后读取，避免初始抖动污染）
+    LaunchedEffect(listState, initialized) {
+        if (!initialized) return@LaunchedEffect
         snapshotFlow { listState.isScrollInProgress }
+            .drop(1)
             .distinctUntilChanged()
             .collect { scrolling ->
                 if (!scrolling) {
                     val info = listState.layoutInfo
-                    val center = info.viewportStartOffset + (info.viewportEndOffset - info.viewportStartOffset) / 2f
+                    val center = (info.viewportEndOffset - info.viewportStartOffset) / 2f
                     val centerIdx = info.visibleItemsInfo
                         .firstOrNull { center >= it.offset && center < it.offset + it.size }
                         ?.index ?: return@collect
-                    val centerOffset = with(density) { ((containerHeight - itemHeight) / 2).toPx() }.toInt()
+                    // 松手吸附：中央项精确居中（真轮盘手感）
                     listState.animateScrollToItem(centerIdx, scrollOffset = centerOffset)
+                    // 上报当前值（值随用户滚动变化）
+                    onSelect(range.first + centerIdx.coerceIn(0, range.count() - 1))
                 }
             }
     }
@@ -105,6 +117,7 @@ private fun NumberWheel(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(vertical = halfPad),
         ) {
             items(range.count()) { i ->
                 val v = range.first + i

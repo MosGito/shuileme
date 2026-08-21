@@ -16,10 +16,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -100,12 +98,12 @@ fun ShuilemeOnboardingScreen(viewModel: ShuilemeViewModel) {
         }
         Spacer(Modifier.height(16.dp))
 
-        // 内容（垂直居中）
+        // 内容（垂直居中；SL-9.5 移除 verticalScroll：与外嵌 TimeScrollPicker 的 LazyColumn 嵌套滚动冲突，
+        // 导致时间选择器无法拖动。各步骤内容在目标设备均放得下。）
         Column(
             modifier = Modifier
                 .weight(1f)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState()),
+                .fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -268,7 +266,7 @@ private fun SleepTargetStep(
     Spacer(Modifier.height(12.dp))
     val inclination = SleepPersonalityEngine.initialInclination(sleepTimeMin, wakeTimeMin, idealSleepMin)
     Text(
-        "初步倾向：${PersonalityCardGenerator.personalityPairEmoji(inclination)} ${inclination.displayName}型（低置信度）",
+        "初步倾向：${PersonalityCardGenerator.personalityPairEmoji(inclination)} ${inclination.displayName.removeSuffix("型")}型（低置信度）",
         fontSize = 16.sp,
         color = ShuilemeNight.Accent,
     )
@@ -354,7 +352,7 @@ private fun GoodnightStep(initial: SleepPersonalityType?, onFinish: () -> Unit) 
     if (initial != null) {
         Spacer(Modifier.height(12.dp))
         Text(
-            "初步倾向：${PersonalityCardGenerator.personalityPairEmoji(initial)} ${initial.displayName}型（低置信度）",
+            "初步倾向：${PersonalityCardGenerator.personalityPairEmoji(initial)} ${initial.displayName.removeSuffix("型")}型（低置信度）",
             fontSize = 16.sp,
             color = ShuilemeNight.Accent,
         )
@@ -374,7 +372,7 @@ private fun PreviewStep(initial: SleepPersonalityType?, onFinish: () -> Unit) {
     Spacer(Modifier.height(8.dp))
     if (initial != null) {
         Text(
-            "初步倾向：${initial.primaryEmoji}${initial.comboEmojis.last()} ${initial.displayName}型",
+            "初步倾向：${initial.primaryEmoji}${initial.comboEmojis.last()} ${initial.displayName.removeSuffix("型")}型",
             style = MaterialTheme.typography.bodyMedium,
             color = ShuilemeNight.Accent,
         )

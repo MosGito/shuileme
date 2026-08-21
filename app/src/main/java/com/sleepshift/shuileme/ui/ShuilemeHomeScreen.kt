@@ -7,6 +7,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -33,25 +35,23 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -61,7 +61,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -121,8 +120,8 @@ fun ShuilemeHomeScreen(viewModel: ShuilemeViewModel) {
     val personality by viewModel.personalityState.collectAsState()
     val talk by viewModel.talkText.collectAsState()
     val detectiveReport by viewModel.detectiveReport.collectAsState()
-    val scope = rememberCoroutineScope()
     var showCase by remember { mutableStateOf(false) }
+    var settingsOpen by remember { mutableStateOf(false) }
     var gesture by remember { mutableStateOf(SleepGestureTrigger()) }
     var hintVisible by remember { mutableStateOf(false) }
     var hintTick by remember { mutableIntStateOf(0) }
@@ -180,20 +179,8 @@ fun ShuilemeHomeScreen(viewModel: ShuilemeViewModel) {
         }
     }
 
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            SettingsDrawer(
-                viewModel = viewModel,
-                state = state,
-                context = context,
-                onOpenDetective = {
-                    showCase = true
-                    scope.launch { drawerState.close() }
-                },
-            )
-        },
+    Box(
+        Modifier.fillMaxSize(),
     ) {
         BoxWithConstraints(
             Modifier
@@ -437,9 +424,36 @@ fun ShuilemeHomeScreen(viewModel: ShuilemeViewModel) {
 
             // ── 右上：夜灯式设置开关（挂绳齿轮 → 向下拖动打开设置）──
             NightLightButton(
-                onOpen = { scope.launch { drawerState.open() } },
+                onOpen = { settingsOpen = true },
                 modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
             )
+            }
+        }
+
+        // SL-9.5：设置面板从上方展开（齿轮下拉打开 → 面板自顶部滑下 + 半透明遮罩）
+        AnimatedVisibility(
+            visible = settingsOpen,
+            enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(tween(250)),
+            exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(tween(250)),
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                // 遮罩：点击任意空白关闭
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.4f))
+                        .clickable { settingsOpen = false },
+                )
+                SettingsDrawer(
+                    viewModel = viewModel,
+                    state = state,
+                    context = context,
+                    onOpenDetective = {
+                        showCase = true
+                        settingsOpen = false
+                    },
+                    onClose = { settingsOpen = false },
+                )
             }
         }
     }
@@ -603,27 +617,40 @@ private fun NightLightButton(onOpen: () -> Unit, modifier: Modifier = Modifier) 
     }
 }
 
-/** 设置抽屉（SL-8） */
+/** 设置面板（SL-8 + SL-9.5：从上方展开的顶部面板，圆角底边 + 收起按钮） */
 @Composable
 private fun SettingsDrawer(
     viewModel: ShuilemeViewModel,
     state: ShuilemeState,
     context: android.content.Context,
     onOpenDetective: () -> Unit,
+    onClose: () -> Unit,
 ) {
-    ModalDrawerSheet(
-        drawerContainerColor = ShuilemeNight.Sky,
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .background(
+                ShuilemeNight.Sky,
+                RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp),
+            )
+            .heightIn(max = 620.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
     ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("设置", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = ShuilemeNight.TextPrimary)
-            Spacer(Modifier.height(16.dp))
+            TextButton(onClick = onClose) {
+                Text("✕", color = ShuilemeNight.TextSecondary)
+            }
+        }
+        Spacer(Modifier.height(16.dp))
 
-            Text("虚拟时间偏移", style = MaterialTheme.typography.titleSmall)
+        Text("虚拟时间偏移", style = MaterialTheme.typography.titleSmall)
             Slider(
                 value = state.currentOffsetMin.toFloat(),
                 onValueChange = { viewModel.updateOffset((it / 15f).roundToInt() * 15) },
@@ -660,14 +687,19 @@ private fun SettingsDrawer(
                 Text("🌙 昨晚月亮观察")
             }
             TextButton(
-                onClick = { context.startActivity(Intent(context, PersonalityCardActivity::class.java)) },
+                onClick = {
+                    onClose()
+                    context.startActivity(Intent(context, PersonalityCardActivity::class.java))
+                },
                 modifier = Modifier.fillMaxWidth().height(48.dp),
             ) { Text("🫧 我的睡眠人格卡片") }
             TextButton(
-                onClick = { context.startActivity(Intent(context, DebugActivity::class.java)) },
+                onClick = {
+                    onClose()
+                    context.startActivity(Intent(context, DebugActivity::class.java))
+                },
                 modifier = Modifier.fillMaxWidth().height(48.dp),
             ) { Text("旧版控制台") }
-        }
     }
 }
 
