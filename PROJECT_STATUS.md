@@ -1,219 +1,146 @@
-# SleepShift 开发状态
+# SleepShift / 睡了么 项目状态（PROJECT_STATUS.md）
 
-> 本文件长期记录项目开发状态。**每完成一个独立开发阶段，必须更新本文件。**
+> **本文件只描述「当前状态」，不复制历史。**
+> 历史开发记录以 [DEVELOPMENT_LOG.md](./DEVELOPMENT_LOG.md) 为**唯一长期来源**（倒序，含每阶段目标 / 完成功能 / 架构与文件 / 问题与解决 / 技术决策 / 遗留 / 下一步）。涉及历史背景时，本文件只做一句话指路（如「详见 DEVELOPMENT_LOG §五」）。
+>
+> 维护约定：每完成一个独立开发阶段，**先更新 DEVELOPMENT_LOG.md，再同步本文件的「当前状态」相关小节**；两者不要互相复制大段内容。
 
-## 项目目标
+---
 
-开发一个 Android **Device Owner** 应用（SleepShift），通过修改系统时区，在用户设定的睡眠窗口内让显示时间向未来偏移，形成自然睡眠暗示（如真实 22:30 → 显示 00:00）。
+## 1. 项目定位（当前）
 
-**v2 升级点（2026-08-19 起）**：
-- 时间/偏移全部**用户可配置**（连续交互：Wheel Picker + 滑动条），不再硬编码 22:00/06:00/GMT+10
-- **恢复按"系统显示时间"触发**：显示时间达到设置的恢复时间时恢复（真实触发提前偏移量），避免"08:30 跳回 06:30"
-- 三种偏移策略模式：**FIXED（固定）/ GRADUAL（逐日递增）/ FLUCTUATION（目标±范围）**
-- 技术要点：`DevicePolicyManager.setTimeZone()`（Device Owner）+ `AlarmManager.setExactAndAllowWhileIdle()`；偏移量动态生成时区 ID `GMT±HH:MM`（如 +135min → `GMT+10:15`）
-- 持久化：Preferences DataStore（`androidx.datastore:datastore-preferences:1.1.1`）
+- **产品名**：睡了么（包名 `com.sleepshift`）
+- **一句话**：一个假装时间变晚、帮你早点睡的小工具 —— 虚拟时间 + 心理暗示 + 娱乐化睡眠陪伴。
+- **核心机制**：真实时间 → 偏移算法 → **虚拟时间展示** → 用户感知变化。纯计算展示，**不触碰系统时间 / 时区 / 状态栏**。
+- **技术红线（MVP）**：不依赖 Root / Shizuku / Device Owner / 系统时间修改。
+- **历史沿革**：项目由「系统时区偏移工具 SleepShift」转型而来；系统时区路线（P0~P11：Device Owner / Shizuku / TimezoneScheduler）已**冻结保留**为高级实验资产，代码不删（详见 DEVELOPMENT_LOG §五、§七、附录 B）。
 
-## 已完成功能
+---
 
-### 环境与项目搭建（2026-08-19）
-- [x] **开发环境搭建**：JDK 21 LTS（`D:\AndroidDev\JDK\jdk-21.0.12.8`）、Android Studio 2026.1.3.7、Android SDK 36、模拟器 `SleepShift_AVD`（AEHD 硬件加速），全部部署在 D 盘
-- [x] **项目创建**：Kotlin + Jetpack Compose，AGP 8.13.2 / Kotlin 2.4.10 / Compose BOM 2025.08.00 / Gradle 8.14.3，compileSdk 36 / targetSdk 36 / minSdk 26
-- [x] **获取 Device Owner 授权**：`dpm set-device-owner com.sleepshift/.admin.DeviceAdminReceiver` 一次成功，`list-owners` 验证 ✅
+## 2. 当前版本与仓库状态
 
-### v2 重设计（2026-08-19）
-- [x] **产品架构重设计**：从固定 22:00/06:00 + GMT+10 升级为可配置的智能睡眠干预系统（时间连续选择、偏移滑动条 0-180min/15 步进、三种模式、实时预览、Debug 测试入口），详见 DEVELOPMENT_LOG #7
-- [x] **阶段 1：数据模型**（`assembleDebug` ✅）
-  - 新增 `SleepShiftSettings`（用户配置：enabled / startTimeMin / restoreTimeMin / offsetMin / mode / 模式参数）+ `SchedulerState`（内部运行时：进度、前一晚偏移、当前偏移、原始时区、武装夜晚标记）
-  - 新增 `NightWindow` 推导模型，**编码 v2 恢复逻辑**：`realWindow = nightLength - offset`（恢复=显示时间达 restoreTime 那一刻）+ 配置合法性校验
-  - 新增 `OffsetStrategy` 三实现：`FixedStrategy` / `GradualStrategy`（min(step×N, target)）/ `FluctuationStrategy`（三角分布 + 每日变化限幅）
-  - 新增 `SettingsRepository`（Preferences DataStore）：用户配置/内部状态分层，`originalTimezoneId` 写保护
-  - 新增纯函数 `buildShiftTimeZoneId(originalOffsetMillis, offsetMin)` → 动态 `GMT±HH:MM`
-  - 依赖：`androidx.datastore:datastore-preferences:1.1.1`
-- [x] **阶段 2：Compose UI**（`assembleDebug` ✅）
-  - 底部导航三页：今日 / 配置 / 模式（状态式导航，未引入 navigation-compose）
-  - 自研 `TimeWheelPicker`：双列轮盘（小时 0-23 + 分钟 0/15/30/45），滚动居中吸附
-  - `OffsetSlider`（0-180min、15 步进）+ `LivePreview`（真实时间/偏移/显示时间，每秒刷新）
-  - 配置页「今晚效果」卡片（开始/恢复 真实时刻 → 显示时刻）
-  - 模式页：三模式卡片 + 参数滑条（渐进步进 / 波动范围）+ 渐进序列预览（复用策略引擎）
-  - UI 由 `SettingsViewModel`（内存 `mutableStateOf`）驱动，与 `SleepShiftSettings` 完全兼容（阶段 3 接 DataStore）
-  - 依赖：`androidx.lifecycle:lifecycle-viewmodel-compose:2.9.1`
-- [x] **阶段 3：配置保存（DataStore 持久化）**（`assembleDebug` ✅ + 模拟器验证 ✅）
-  - 分层固化：UI → SettingsViewModel → SettingsRepository → DataStore，Repository 为唯一数据入口
-  - 新增 `SleepShiftApplication` 持有 Repository 单例；`SettingsViewModelFactory` 注入 ViewModel
-  - `SettingsViewModel` 改 StateFlow（`stateIn` + `collectAsState`），UI 方法签名不变，修改即保存
-  - Repository 增加 `settingsVersion`（版本 1）+ `migrate()` 逐版本迁移框架（未来结构升级通道）
-  - setter 加"值未变跳过写入"守卫，避免轮盘/滑条拖动产生冗余写盘
-  - **模拟器验证**：改 enabled（关→开）、偏移（120→45 分钟）→ 重启模拟器 → 配置从磁盘恢复 ✅
-  - 技术发现：DO 应用 `am force-stop` 受保护（杀不掉），持久化验证改用模拟器重启
-- [x] **阶段 4-A：TimezoneScheduler 核心**（单测 5/5 ✅ + `assembleDebug` ✅）
-  - 全新 `TimezoneScheduler`：**零硬编码**（无 22:00/06:00/GMT+10/固定 120），全部来自 `SleepShiftSettings`
-  - 纯计算（JVM 可单测）：`planNight` / `computeNextShiftEpoch`（原始时区下次 startTime）/ `computeRestoreEpoch`（= 开始 + realWindow）/ `buildShiftZoneId`
-  - 恢复逻辑：真实窗口 = 夜间显示时长 − **当晚实际偏移**（+120min → 真实 04:30 恢复、显示 06:30）
-  - 策略接入：FIXED/GRADUAL/FLUCTUATION 每晚推进实际偏移，`armedEpochDay` 防同夜重复推进
-  - 状态管理：`SchedulerState` 新增 `armed` / `nextShiftEpoch` / `nextRestoreEpoch`（DataStore 持久化）
-  - 闹钟武装：`setExactAndAllowWhileIdle` + `RTC_WAKEUP`，PendingIntent 目标 `AlarmReceiver`（阶段 4-B 注册）；Manifest 增 `SCHEDULE_EXACT_ALARM`
-  - JVM 单测（`testDebugUnitTest`）：22:30/06:30/+120 → shift=22:30、restore=04:30 等 5 例全过
-  - 修复：`strategyFor` 移入 companion（伴生对象不能调实例方法）；`buildShiftTimeZoneId` 小时位补零
-- [x] **阶段 4-B：Receiver 适配 + DPM 接入**（单测 7/7 ✅ + `assembleDebug` ✅ + 模拟器 adb 验证 ✅）
-  - `AlarmReceiver`：ACTION_SHIFT / ACTION_RESTORE（**不信任 PendingIntent extra**，读 DataStore 当前状态计算时区）+ TEST_ARM / TEST_CANCEL / TEST_SET_ZONE（Debug 手动入口）
-  - `goAsync` + 协程 + 15s 超时；每次执行后重新 arm()，下一周期使用新配置
-  - `BootReceiver`：BOOT_COMPLETED / MY_PACKAGE_REPLACED 重新武装；`ensureActiveWindowRestore` 处理"偏移状态重启"场景
-  - `DeviceAdminReceiver`：onEnabled → arm()；onDisabled → cancel()
-  - `DeviceOwner`：DPM.setTimeZone 封装（DO 校验 + 自动关闭自动时区）
-  - **模拟器验证**：TEST_ARM → SHIFT（+180min → `Etc/GMT-3` → 时区 **+0300**）→ RESTORE（GMT → **+0000**）✅
-  - 修复：同一晚重武装时 FIXED 按当前设置重算偏移（否则改设置后下一周期不生效）
-- [x] **阶段 4-C：偏移粒度约束为整小时**（单测 7/7 ✅ + `assembleDebug` ✅ + 模拟器 ✅）
-  - 产品决策：受平台约束，偏移粒度改为**整小时**（0/60/120/180，`Etc/GMT±H`）
-  - `OFFSET_STEP_MIN=60`；渐进步进 60/120；波动范围 0/60；波动每日变化限幅 60
-  - `settingsVersion` 升到 **v2**，`migrate()` v1→v2 归一化旧 15 分钟值；读取时防御性归一化
-  - UI 滑条均改整小时步进；模拟器验证中点吸附到 +120 ✅
-- [x] **阶段 5：模拟器端到端验证**（单测 12/12 ✅ + `assembleDebug` ✅）
-  - **FIXED**：+60 / +120 / +180 三档 SHIFT→对应偏移（+0100/+0200/+0300）、RESTORE→恢复 ✅
-  - **GRADUAL**：`TEST_FORCE_ADVANCE` 模拟多天 → day1 +60 / day2 +120 / day3 +180 ✅
-  - **FLUCTUATION**：20 次推进分布 120×14/180×5/60×1（整小时、范围内、无负值）✅ + 属性单测（1000 样本）
-  - **正常重启**：BootReceiver 触发 + scheduler 重新 arm ✅
-  - **偏移状态重启**：模拟器启动重置时区（环境限制）无法真实复现；`computeActiveRestoreEpoch` 决策逻辑抽取纯函数并单测（窗口内返回正确恢复时刻 / 未偏移·已过返回 null）✅
-  - **边界-禁用**：enabled=false → cancel + 恢复时区 ✅（**修复**：原缺失该联动）
-  - **边界-改配置**：改偏移自动重新武装 ✅（**修复**：原缺失，旧闹钟会在旧时刻按旧配置执行）
-  - **边界-启用晚于开始时间**：单测覆盖跨天 ✅
-  - **修复清单**：VM 联动 arm / cancel+restore；FLUCTUATION 取整偏差（OFFSET_STEP_HALF 7→30）；ensureActiveWindowRestore 纯函数化
-- [x] **阶段 6：产品化 UI 与用户体验优化**（`assembleDebug` ✅ + 模拟器验证 ✅）
-  - **首次启动引导**（3 步，普通语言）：理念介绍 → 能力检查（系统时间控制权限 / 自动时间 / 精确闹钟）→ 就绪 + 通知授权；`onboardingDone` 持久化（重启不重复显示）
-  - **今日主页**：状态「正常时间 / 睡眠模式」；真实时间 → 手机显示（友好文案「2 小时」）；今晚计划卡片（开始/提前/恢复）；关闭确认弹窗「关闭后手机时间将恢复正常」
-  - **配置页**：实时解释文本「今晚 22:30 开始，手机时间会提前 2 小时」；睡眠模式中修改提示「修改将在下一周期生效」（Snackbar）
-  - **模式页**：三种模式普通语言说明 + 适合人群
-  - **通知**：非侵入式（IMPORTANCE_LOW、无声音震动）「睡眠模式已启动 / 正常时间已恢复」，触发 SHIFT/RESTORE 时发送
-  - 约束遵守：**未重构 Scheduler/Receiver/DataStore**；仅新增 onboarding 标志（DataStore 追加键）+ 通知侧调用
-
-### Phase 11：Shizuku 时区通道（2026-08-21）
-- [x] **Phase 11-A：TimeShiftEngine 抽象层**（`assembleDebug` ✅ + SleepShift_AVD_v2 启动验证 ✅）
-  - 新增 `engine` 包：`TimeShiftEngine`（接口）/ `TimeShiftResult` / `EngineType`（DEVICE_OWNER/SHIZUKU/ROOT/NONE）/ `EngineManager`（按优先级选引擎：Shizuku > Device Owner，Root 留 M2）
-  - `TimezoneScheduler` 解耦 `DeviceOwner.setTimeZone` → `timeShiftEngine` 注入（applyShift/applyRestore 统一走引擎）
-  - `DeviceOwner` 补 `setAutoTimeZone`；`SleepShiftApplication` 接线 `EngineManager`；Device Owner 能力保留未删
-- [x] **Phase 11-B：Shizuku 能力层**（`assembleDebug` ✅ + SleepShift_AVD_v2 验证 ✅）
-  - 新增 `permission` 包：`ShizukuManager`（安装/运行/binder 检测）/ `ShizukuPermission`（授权状态 + requestPermission）/ `CapabilityState` / `CapabilityResolver`
-  - 依赖 `dev.rikka.shizuku:api:13.1.5` + `provider:13.1.5`；Manifest 注册 `ShizukuProvider`
-  - `ShizukuTimeShiftEngine` 骨架（isAvailable/type）；EngineManager 注册 Shizuku（优先）
-  - `DebugActivity` 能力调试页（独立 Activity，主流程加「开发测试」临时入口）
-- [x] **Phase 11-C：Shizuku shell 实验 + 真机验证**（Redmi K80 + HyperOS ✅）
-  - `ShizukuTimeShiftEngine` 实现 shell 时区修改：`settings put global auto_time_zone` + `service call alarm 3 s16 "<zone>"`（IShizukuService.newProcess，捕获 exit/stdout/stderr）
-  - **真机验证成功**：Shizuku 安装/运行/授权 ✅、engine 执行时区命令 ✅、auto_time_zone 关闭 ✅、系统设置时区切换 ✅
-  - **遗留问题**：状态栏/SystemUI 时间未刷新（HyperOS 刷新/广播问题，**非权限问题**）
-- [x] **Phase 11-D：SystemUI 刷新修复 + Shizuku 授权引导**（`assembleDebug` ✅ + 单测 ✅）
-  - **D-A/B**：`setTimeZone` 成功后追加三类时钟刷新广播（TIMEZONE_CHANGED / TIME_SET / TIME_TICK，shell best-effort）+ `refreshSystemUiClock` 独立调试入口（DebugScreen「仅刷新 SystemUI」按钮）
-  - **D-C**：`AppCapabilities` 识别 Shizuku 通道（`timezoneControlReady` = Shizuku 或 Device Owner）；Onboarding Step 2 增 Shizuku 授权引导卡（未安装/未运行/未授权三态 + 授权按钮 + 结果监听实时重查）
-
-## 当前开发阶段
-
-> **⚠️ 产品方向调整（P12 起，2026-08-21）**：产品转型为「睡了么」——虚拟时间 + 心理暗示 + 娱乐化睡眠陪伴。
-> 系统时间操纵路线（Phase 11-C/D = P10/P11）**冻结**，不作主产品；旧代码保留。详见外层文档
-> `D:\AndroidDev\SleepShift_Product_Redesign.md` / `SleepShift_Product_State.md`。本文件为应用仓库内记录（旧编号 Phase 沿用）。
-
-**Phase 11-D（P11）代码完成**（系统时区路线已冻结）
-
-- Shizuku 时区通道真机可用（Redmi K80 + HyperOS），唯一遗留为 SystemUI 状态栏时间刷新（不再作主产品阻塞）
-- Phase 11-D 已实现：SystemUI 刷新广播 + Onboarding Shizuku 授权引导 + Debug Console（复制日志/诊断工具）
-- 下一步：**P12 Virtual Clock Engine**（纯计算虚拟时间，见外层设计文档）
-
-## 遇到的问题
-
-> 详细记录（日期/问题/尝试方案/结果/最终解决方式）见 [DEVELOPMENT_LOG.md](./DEVELOPMENT_LOG.md)。此处仅列当前仍相关的事项：
-
-- **构建相关（已解决）**：Compose BOM 2026.08.00 需 compileSdk 37 + AGP 9.1+，BOM 已锁定 `2025.08.00`。⚠️ 若升级 BOM 需同步升级 AGP/compileSdk。
-- **下载相关（已解决）**：Gradle 发行源改腾讯镜像；GitHub 直连不稳定用 winget/加 `--ssl-no-revoke`。
-- **环境变量**：当前 bash 会话不继承新设环境变量，命令行需显式 `JAVA_HOME='D:\AndroidDev\JDK\jdk-21.0.12.8'`。
-- **v2 恢复逻辑**：恢复按**显示时间**触发（真实 04:30 恢复 +120min 偏移，显示 06:30）。⚠️ 注意系统时区在偏移窗口内确实提前 2 小时。
-- **时区测试提醒**：测试会真的改模拟器系统时区，测完记得恢复。
-- **⚠️ HyperOS SystemUI 时间刷新（真机确认，Phase 11-D 已实现修复待验证）**：Redmi K80 上 `setTimeZone` 成功（settings 显示新时区）但状态栏时间不刷新。Phase 11-D 在 setTimeZone 后追加 TIMEZONE_CHANGED / TIME_SET / TIME_TICK 三类广播（best-effort）。若仍未生效，兜底方案是 Shizuku `killall com.android.systemui` 重启 SystemUI。
-
-## 已修改的重要文件
-
-| 文件 | 说明 |
+| 项 | 值 |
 |---|---|
-| `app/src/main/AndroidManifest.xml` | 声明 Application（`.SleepShiftApplication`）+ `DeviceAdminReceiver` + `RECEIVE_BOOT_COMPLETED` + `SCHEDULE_EXACT_ALARM`（阶段 4-B 注册 AlarmReceiver/BootReceiver） |
-| `app/src/main/java/com/sleepshift/admin/DeviceAdminReceiver.kt` | Device Owner 接收器（阶段 4-B 加 onEnabled/onDisabled 回调） |
-| `app/src/main/java/com/sleepshift/SleepShiftApplication.kt` | Application 单例容器，持有 `SettingsRepository` |
-| `app/src/main/java/com/sleepshift/MainActivity.kt` | 入口 Activity，`viewModels` 注入 Repository 工厂 |
-| `app/src/main/java/com/sleepshift/ui/SleepShiftApp.kt` | 底部导航壳（三页状态式切换） |
-| `app/src/main/java/com/sleepshift/ui/SettingsViewModel.kt` | 设置 ViewModel（StateFlow 驱动，DataStore 持久化） |
-| `app/src/main/java/com/sleepshift/ui/SettingsViewModelFactory.kt` | ViewModel 工厂（注入 Repository 单例） |
-| `app/src/main/java/com/sleepshift/ui/NightPlan.kt` | 今晚窗口展示推算（真实→显示时刻） |
-| `app/src/main/java/com/sleepshift/ui/home/HomeScreen.kt` | 首页：状态/预览/下次切换/总开关 |
-| `app/src/main/java/com/sleepshift/ui/config/ConfigScreen.kt` | 配置页：实时预览 + 轮盘 + 滑动条 |
-| `app/src/main/java/com/sleepshift/ui/mode/ModeScreen.kt` | 模式页：三模式 + 参数 |
-| `app/src/main/java/com/sleepshift/ui/components/TimeWheelPicker.kt` | 自研双列轮盘选择器 |
-| `app/src/main/java/com/sleepshift/ui/components/OffsetSlider.kt` | 偏移滑动条（0-180、15 步进） |
-| `app/src/main/java/com/sleepshift/ui/components/LivePreview.kt` | 实时效果预览 |
-| `app/src/main/java/com/sleepshift/ui/components/CurrentTime.kt` | 每秒刷新时钟 |
-| `app/src/main/java/com/sleepshift/model/SleepShiftModels.kt` | **v2 数据模型**：SleepShiftSettings / SchedulerState / NightWindow / 默认值 / 校验 / `buildShiftTimeZoneId` |
-| `app/src/main/java/com/sleepshift/strategy/OffsetStrategy.kt` | **偏移策略引擎**：FIXED / GRADUAL / FLUCTUATION |
-| `app/src/main/java/com/sleepshift/data/SettingsRepository.kt` | **Preferences DataStore 仓库**（分层存储 + 原始时区写保护 + settingsVersion） |
-| `app/src/main/java/com/sleepshift/time/TimezoneScheduler.kt` | **调度核心**：planNight 纯计算 + 策略接入 + 状态 + 精确闹钟武装 + 执行偏移/恢复 + IANA 感知时区映射（零硬编码） |
-| `app/src/test/java/com/sleepshift/time/TimezoneSchedulerTest.kt` | JVM 单测：epoch/时区 ID/渐进策略/重武装重算（7 例全过） |
-| `app/src/main/java/com/sleepshift/AlarmReceiver.kt` | 精确闹钟接收器：SHIFT/RESTORE + Debug 测试入口（goAsync + 协程） |
-| `app/src/main/java/com/sleepshift/BootReceiver.kt` | 开机/更新后重新武装 + 偏移窗口恢复兜底 |
-| `app/src/main/java/com/sleepshift/admin/DeviceOwner.kt` | DPM.setTimeZone 封装（DO 校验 + 自动关自动时区） |
-| `app/src/main/java/com/sleepshift/notify/NotificationHelper.kt` | 非侵入式通知（睡眠模式启动/恢复） |
-| `app/src/main/java/com/sleepshift/AppCapabilities.kt` | 能力状态检查（引导页用，普通语言呈现） |
-| `app/src/main/java/com/sleepshift/ui/onboarding/OnboardingScreen.kt` | 首次启动引导（3 步 + 状态检查 + 通知授权；Phase 11-D 加 Shizuku 授权引导卡） |
-| `app/src/main/java/com/sleepshift/engine/TimeShiftEngine.kt` | **引擎抽象接口**（Phase 11-A：type/isAvailable/setTimeZone/setAutoTimeZoneEnabled） |
-| `app/src/main/java/com/sleepshift/engine/EngineType.kt` | 引擎类型枚举（DEVICE_OWNER/SHIZUKU/ROOT/NONE） |
-| `app/src/main/java/com/sleepshift/engine/TimeShiftResult.kt` | 时区操作结果（引擎无关） |
-| `app/src/main/java/com/sleepshift/engine/EngineManager.kt` | 引擎管理器（按优先级选可用引擎） |
-| `app/src/main/java/com/sleepshift/engine/DeviceOwnerTimeShiftEngine.kt` | Device Owner 通道引擎（封装原 DeviceOwner） |
-| `app/src/main/java/com/sleepshift/engine/ShizukuTimeShiftEngine.kt` | **Shizuku 通道引擎**（Phase 11-C shell 实现；11-D 加 SystemUI 刷新广播） |
-| `app/src/main/java/com/sleepshift/permission/ShizukuManager.kt` | Shizuku 状态检测（安装/运行/版本；包名常量公开） |
-| `app/src/main/java/com/sleepshift/permission/ShizukuPermission.kt` | Shizuku 授权（状态 + requestPermission） |
-| `app/src/main/java/com/sleepshift/permission/CapabilityState.kt` | 应用能力状态（activeEngine 推导） |
-| `app/src/main/java/com/sleepshift/permission/CapabilityResolver.kt` | 综合能力解析（DO/Shizuku/Root） |
-| `app/src/main/java/com/sleepshift/AppCapabilities.kt` | 引导页能力检查（Phase 11-D：识别 Shizuku 通道） |
-| `app/src/main/java/com/sleepshift/DebugActivity.kt` | 能力 + Shizuku 时区测试调试页（独立 Activity） |
-| `app/src/main/java/com/sleepshift/ui/debug/DebugScreen.kt` | 调试页 UI（Phase 11-D 加「仅刷新 SystemUI」测试） |
-| `app/build.gradle.kts` | AGP 8.13.2 / compileSdk 36 / minSdk 26 / Compose / Java 17 / + datastore |
-| `gradle/libs.versions.toml` | 版本目录；BOM 锁定 `2025.08.00`；+ datastore 1.1.1 |
-| `settings.gradle.kts` | 阿里云 maven 镜像加速（官方源兜底） |
-| `gradle/wrapper/gradle-wrapper.properties` | Gradle 8.14.3，分发地址指向腾讯镜像 |
-| `local.properties` | `sdk.dir=D:\AndroidDev\AndroidSdk`（已 gitignore，不入库） |
-| `PROJECT_STATUS.md` / `DEVELOPMENT_LOG.md` | 状态与问题记录 |
+| 应用名 | 睡了么（`app/src/main/res/values/strings.xml`） |
+| versionName / versionCode | `0.3.25` / `2`（`app/build.gradle.kts`） |
+| git tag | `v0.3.25-alpha` |
+| HEAD | `276c222`（2026-08-22 01:39，`release: SleepWell 0.3.25 Alpha baseline (SL-9.6~SL-9.10)`） |
+| 本地 vs 远端 | 本地 master **落后 `origin/master` 2 个提交**（`6dc9a19`/`024ce71` 为 README.md 创建与更新，2026-08-23，仅存在于远端，尚未合入本地） |
+| 工作区 | 仅文档改动：`DEVELOPMENT_LOG.md`（历史日志重写）、`PROJECT_STATUS.md`（本次更新）；**无业务代码改动** |
 
-## 下一步计划（v2 七阶段）
+---
 
-| 阶段 | 内容 | 状态 |
+## 3. 技术栈与架构（当前代码状态）
+
+### 技术栈
+- Kotlin + Jetpack Compose；AGP 8.13.2 / Kotlin 2.4.10 / Compose BOM 2025.08.00 / Gradle 8.14.3；compileSdk 36 / targetSdk 36 / minSdk 26
+- Preferences DataStore 1.1.1（持久化）、Jetpack Glance 1.1.1（桌面组件）、Shizuku api/provider 13.1.5（冻结轨道）
+- 构建镜像：阿里云 Maven + 腾讯 Gradle 发行源（详见 DEVELOPMENT_LOG 附录 A #1/#2）
+
+### 主产品架构（睡了么，活跃）
+```
+MainActivity（欢迎弹窗 → 5 步引导 → 沉浸主页）
+  ├─ shuileme/ui/：ShuilemeHomeScreen / OnboardingScreen / SleepCaseReportScreen / PersonalityCardScreen / NightTheme
+  │   └─ components/：NightMoon / SleepGoalEditor / TimeScrollPicker（原生 NumberPicker）
+  ├─ shuileme/engine/VirtualClockEngine：真实时间 + offset = 虚拟时间（纯计算，复用 OffsetStrategy 三模式）
+  ├─ shuileme/data/ShuilemeRepository（DataStore：睡眠记录 / 月亮 / 人格 / OnboardingState）
+  ├─ shuileme/reminder/：提醒调度 + 通知 + 睡眠胶囊
+  ├─ shuileme/widget/：Glance 2x1 / 4x2 桌面组件
+  ├─ shuileme/model/：月亮生命 / 睡眠人格 / 睡眠侦探 / 人格气泡物理 / 人格卡片等模型
+  └─ ui/WelcomeDialog.kt + PersonalityCardActivity.kt
+```
+
+### 冻结轨道（系统时区操纵，LEGACY/FROZEN，保留不删）
+```
+TimezoneScheduler → TimeShiftEngine（EngineManager：Shizuku > Device Owner）
+  ├─ engine/（TimeShiftEngine / EngineType / TimeShiftResult / DeviceOwnerTimeShiftEngine / ShizukuTimeShiftEngine）
+  ├─ admin/（DeviceAdminReceiver / DeviceOwner）、permission/（Shizuku 能力层）
+  ├─ AlarmReceiver / BootReceiver / AppCapabilities / DebugActivity
+  └─ 旧 ui/（Home / Config / Mode 三页 + TimeWheelPicker / OffsetSlider / LivePreview）
+```
+
+> 完整文件地图见 DEVELOPMENT_LOG 附录 B。注意：`GravitySensor.kt` 为 SL-9.6 移除重力物理后的历史残留文件（当前无引用）。
+
+---
+
+## 4. 已完成能力（0.3.25 Alpha，按当前代码现状确认）
+
+### 主产品「睡了么」
+- **虚拟时间引擎**：FIXED / GRADUAL / FLUCTUATION 三模式偏移，纯计算无系统副作用
+- **睡眠记录**：「我要睡了🌙 / 我醒啦☀️」打卡，睡眠起止与时长本地持久化
+- **月亮陪伴系统**：五阶段成长（🌑→🌕）、情绪、点击波纹、睡前向月亮道晚安、「昨晚月亮观察」报告卡
+- **睡眠人格系统**：基础人格类型 + 倾向分析 + 主页人格气泡（失重漂浮 / 拖拽 / 碰撞）+ 碎碎念
+- **人格分享卡**：MBTI 式「我的睡眠人格」生成、PNG 导出分享
+- **睡眠侦探**：轻量睡眠案件报告（无 UsageStats 权限）
+- **睡眠提醒**：三人格文案（温柔 / 毒舌 / 牛马）+ 模板池 + 调度 + 睡眠胶囊
+- **双睡眠时间目标**：理想作息 + 当前作息（SleepGoalEditor 共享组件，4 键持久化）
+- **首启体验**：欢迎弹窗 + 5 步引导（含原生时间滚轮），OnboardingState 持久化
+- **沉浸式主页**：深色夜空主题、齿轮拉绳设置面板、人格气泡失重漂浮、月亮交互
+- **桌面组件**：Glance 2x1 / 4x2（虚拟时间 + 月亮 + 睡眠状态 + 快捷入口）+ 周期刷新
+- **Alpha 包装**：应用名「睡了么」、versionName 0.3.25 / versionCode 2
+
+### 冻结轨道（遗留能力，非当前产品路径）
+- Device Owner 时区通道、Shizuku shell 时区通道（真机验证记录见 DEVELOPMENT_LOG §七）、TimezoneScheduler 调度核心、调试页
+- 上述能力与三模式偏移算法 / DataStore 框架等**历史资产保留**，未来仅作为高级实验室选项（详见 DEVELOPMENT_LOG 附录 A、附录 B）
+
+---
+
+## 5. 测试与验证状态
+
+| 项 | 状态 | 说明 |
 |---|---|---|
-| 1 | 数据模型（Settings + DataStore + 策略引擎） | ✅ 完成 |
-| 2 | Compose UI（导航 + Wheel Picker + 滑动条 + 实时预览，内存假数据） | ✅ 完成 |
-| 3 | 配置保存（UI → ViewModel → Repository → DataStore 全链路 + 模拟器重启验证） | ✅ 完成 |
-| 4-A | TimezoneScheduler 核心（纯计算 / 策略接入 / 状态 / 闹钟武装，零硬编码） | ✅ 完成 |
-| 4-B | Receiver 适配 + DPM 接入 + adb 测试入口 | ✅ 完成 |
-| 4-C | 偏移粒度约束为整小时（settingsVersion v2 迁移） | ✅ 完成 |
-| 5 | 模拟器端到端验证（三模式 / 重启 / 边界，含修复） | ✅ 完成 |
-| 6 | 产品化 UI 与用户体验（引导 / 主页 / 配置 / 模式 / 通知 / 安全确认） | ✅ 完成 |
-| 11-A | TimeShiftEngine 抽象层（引擎解耦，Device Owner 保留） | ✅ 完成 |
-| 11-B | Shizuku 能力层（检测/授权/Debug 调试页/Provider） | ✅ 完成 |
-| 11-C | Shizuku shell 时区修改 + 真机验证（Redmi K80 ✅） | ✅ 完成（遗留 SystemUI 刷新） |
-| 11-D | SystemUI 刷新修复 + Shizuku 授权引导 | ✅ 代码完成（真机验证待确认） |
+| `assembleDebug` | ✅ | 0.3.25 基线构建通过（记录于 DEVELOPMENT_LOG §一） |
+| `testDebugUnitTest` | ✅ 记录为 123 例全过 | 记录于 DEVELOPMENT_LOG §一；原始出处为外层状态文档；当前整理时未重新运行【待确认】 |
+| 模拟器验收 | ✅ | SL-9.4~9.10 每轮均有 Pixel 模拟器截图验收（`screenshots/sl9_4/` ~ `sl9_10/`） |
+| 真机（Redmi K80） | 【待确认】 | SL-9 各轮 README 列有真机测试清单，但仓库内无执行结果记录 |
+| Alpha 内测反馈 | 未开始 | 0.3.25 Alpha 反馈尚未收集 |
 
-> 注：阶段 7-10 为「模拟器检修 / 时区权限路线实验（WRITE_SETTINGS）」辅助工作，见 `D:\AndroidDev\CURRENT_STATE.md`，非应用功能阶段。v2 主线阶段 6 后直接进入 Phase 11（Shizuku 技术路线）。
+---
 
-## 下次继续开发时需要注意的事项
+## 6. 当前已知问题
 
-- **命令行构建**：当前 bash 会话不继承新环境变量，构建必须显式：
-  `JAVA_HOME='D:\AndroidDev\JDK\jdk-21.0.12.8' ./gradlew.bat assembleDebug`（在项目根目录）
-- **adb / 模拟器**：adb 在 `D:\AndroidDev\AndroidSdk\platform-tools\adb.exe`；模拟器 `SleepShift_AVD` 已授权为 Device Owner，直接复用。若重置 AVD，需重新 `adb shell dpm set-device-owner com.sleepshift/.admin.DeviceAdminReceiver`。
-- **不要随意升级 Compose BOM**：`2025.08.00`（Compose 1.9.0）与 AGP 8.13.2/compileSdk 36 匹配；升级到 2026.08.00 需同时升 AGP 9.1+ 和 compileSdk 37。
-- **Bash 陷阱**：带斜杠的 Windows 参数（如 `/S`、`/MOVE`、`/D=`）会被 MSYS 转换，需 `MSYS2_ARG_CONV_EXCL="*"` 或改用 PowerShell；curl 到部分源需 `--ssl-no-revoke`。
-- **提权脚本**：需管理员执行的 .ps1 必须**纯 ASCII**（PowerShell 5.1 按 GBK 解析无 BOM 中文脚本会静默失败）。
-- **v2 调度语义**：恢复时刻 = 开始时刻 +（夜间显示时长 − 偏移）；偏移随策略每晚变化，需用 `armedEpochDay` 标记防止同夜重复推进策略状态。
-- **DataStore**：`originalTimezoneId` 仅在首次启用写入（写保护）；策略状态字段仅 Scheduler 写、UI 只读。
-- **DO 应用 force-stop 受限**：`am force-stop` 杀不掉 Device Owner 应用进程，App 重启/持久化验证用 `adb reboot`（更严格的验证方式）。
-- **⚠️ 平台约束（已决策）：setTimeZone 只应用 IANA 时区 ID**：Android 16 (API 36) 自定义 `GMT±HH:MM` 会被静默忽略（返回 true 不生效）。**已决策约束偏移为整小时**（`Etc/GMT±H`），`OFFSET_STEP_MIN=60`，settingsVersion v2 迁移旧值。
-- **⚠️ 模拟器环境限制：启动重置时区**：本模拟器（google_apis）每次启动将时区强制重置为 GMT，覆盖 `persist.sys.timezone`（非 GMS、与 auto_time/auto_time_zone 无关）。→ "偏移状态重启"场景无法在模拟器真实复现；真机 `persist.sys.timezone` 会保留。相关逻辑已纯函数化单测。
-- **⚠️ 模拟器环境：SCHEDULE_EXACT_ALARM 需授权**：每次重装 APK 需重新 `adb shell appops set com.sleepshift SCHEDULE_EXACT_ALARM allow`（重启不丢失）。
-- **⚠️ 自动时区必须关闭**：`AUTO_TIME_ZONE=1` 时 `setTimeZone` 返回 false；应用在 `DeviceOwner.setTimeZone` 内自动关闭（DO 可写）。
-- **⚠️ SCHEDULE_EXACT_ALARM 需授权**：Manifest 声明不自动授予（DO 也非豁免）；模拟器需 `adb shell appops set com.sleepshift SCHEDULE_EXACT_ALARM allow`；`scheduleAlarms` 已加 `setAlarmClock` 回退（无权限时兜底）。
-- **模拟器当前残留状态**：`enabled=true`、`offsetMin=120`（阶段 4-C 滑条验证产物）、已武装、时区已恢复 GMT。
-- **JVM 单测**：`JAVA_HOME='D:\AndroidDev\JDK\jdk-21.0.12.8' ./gradlew.bat testDebugUnitTest`（纯计算验证，不依赖模拟器/真实时间）。
-- **POST_NOTIFICATIONS**：API 33+ 需运行时授权；引导页 Step 3 提供授权入口；模拟器也可 `adb shell pm grant com.sleepshift android.permission.POST_NOTIFICATIONS`。
-- **Shizuku 授权激活（真机无 root）**：需先用 adb 激活——`adb shell sh /sdcard/Android/data/moe.shizuku.privileged.api/start.sh`（或无线调试），之后在应用内/Shizuku 里授权给 SleepShift；重启后需重新激活。引擎可用 = Shizuku 运行 + 已授权。
-- **HyperOS SystemUI 刷新验证**：Phase 11-D 后，真机打开主界面「开发测试」→ DebugActivity →「仅刷新 SystemUI（测试广播）」可隔离验证哪条广播生效；兜底 `killall com.android.systemui`。
-- **真机验证入口**：主界面右上角「开发测试」临时按钮 → `DebugActivity`（能力状态 + 时区测试 + SystemUI 刷新测试）；正式发布前需移除该入口。
+| 问题 | 状态 | 来源 |
+|---|---|---|
+| 真机体验与 Alpha 内测反馈缺失 | 【待确认】 | DEVELOPMENT_LOG §一 |
+| 4x2 桌面组件仅代码级验证（Pixel Launcher 拖拽限制，无法模拟器放置） | 已知，未真机复验【待确认】 | DEVELOPMENT_LOG §三 |
+| 本地 master 未包含 README.md（仅远端） | 仓库事实 | git 状态 |
+| `WRITE_SETTINGS` 权限声明与实验注释残留（阶段 7 实验产物，无代码使用） | 已知，保留 | 代码现状 / DEVELOPMENT_LOG §十 |
+| `GravitySensor.kt` 无引用残留 | 已知，保留 | 代码现状 / DEVELOPMENT_LOG 附录 B |
+| 冻结轨道遗留：HyperOS 状态栏时间刷新不可控、Shizuku 无法可靠修改系统时间 | 已冻结，**不再阻塞主产品** | DEVELOPMENT_LOG §七 |
+| 睡眠时间监测准确性、催睡通知完善、整夜监测等 | 开发中/反馈期待方向 | README（远端）所列 |
+
+---
+
+## 7. 正在进行的工作
+
+- **真机 Alpha 测试**：按 `D:\AndroidDev\Shuileme_Alpha_Test_Install.md` 与 `Shuileme_SL9_Real_Device_Test.md` 计划进行；仓库内暂无执行记录【待确认】。
+- 截至 2026-08-26 整理时，无其他活跃开发任务记录（以 DEVELOPMENT_LOG 为准）。
+
+---
+
+## 8. 下一步计划
+
+1. 真机安装 **0.3.25 Alpha** → 收集内测反馈。
+2. 按反馈迭代（README 与历史记录所列方向）：桌面小组件完善 / 催睡通知优化 / 整夜睡眠监测 / 更多人格类型 / 人格卡片分享 / 气泡碎碎念 / 灵动岛假时钟等。
+3. 决定是否把仅存于远端的 README.md 合入本地 master。
+4. 每次重要开发完成后：**先更新 DEVELOPMENT_LOG.md（历史），再同步更新本文件（当前状态）**。
+
+---
+
+## 9. 开发环境与常用命令（速查）
+
+- 构建：`JAVA_HOME='D:\AndroidDev\JDK\jdk-21.0.12.8' ./gradlew.bat assembleDebug`（当前 shell 不继承新环境变量，必须显式指定）
+- 单测：`JAVA_HOME='D:\AndroidDev\JDK\jdk-21.0.12.8' ./gradlew.bat testDebugUnitTest`
+- adb：`D:\AndroidDev\AndroidSdk\platform-tools\adb.exe`；模拟器 `SleepShift_AVD`（DO 已授权）/ `SleepShift_AVD_v2` / `SleepShift_Accept`（Pixel 验收）
+- 冻结轨道验证命令（dpm 授权 / appops / 时区测试广播等）与平台约束速查：详见 DEVELOPMENT_LOG 附录 C
+
+---
+
+## 10. 待确认清单
+
+- 真机（Redmi K80）SL-9 各轮与 0.3.25 Alpha 的体验结果
+- Alpha 内测反馈内容
+- 4x2 桌面组件真机视觉与交互
+- 当前 `testDebugUnitTest` 实际运行结果（历史记录为 123 例全过）
+- 阶段 7 实验的精确日期等历史细节（见 DEVELOPMENT_LOG §十，不影响当前状态）
+
