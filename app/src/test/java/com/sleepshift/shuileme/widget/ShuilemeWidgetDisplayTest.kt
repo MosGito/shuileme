@@ -56,14 +56,37 @@ class ShuilemeWidgetDisplayTest {
     // ── 睡眠状态显示 ──
 
     @Test
-    fun `睡眠状态显示 - 状态行含虚拟感知时长 月亮为进度相`() {
+    fun `睡眠状态显示 - 已睡时长基于真实时间 不受偏移影响 月亮为进度相`() {
         val s = sleepingState(startMs = now) // 刚入睡
         assertTrue(s.isSleeping)
         assertEquals("00:30", ShuilemeWidgetDisplay.virtualTimeText(s, now, zone))
-        // 刚入睡：真实经过 0 + 偏移 120 → 已睡 2 小时
-        assertEquals("睡眠中 · 已睡 2 小时", ShuilemeWidgetDisplay.statusLine(s, now, zone))
+        // 刚入睡：真实经过 0，偏移 +120 不得计入时长 → 已睡 0 分钟
+        assertEquals("睡眠中 · 已睡 0 分钟", ShuilemeWidgetDisplay.statusLine(s, now, zone))
         // 进度 0 → 🌑
         assertEquals("🌑", ShuilemeWidgetDisplay.moonEmoji(s, now, zone))
+    }
+
+    @Test
+    fun `睡眠状态显示 - 偏移 +2h 真实经过 30 分钟仍显示 30 分钟`() {
+        val s = sleepingState(startMs = now, offset = 120)
+        val later = now + 30 * 60_000L
+        assertEquals("睡眠中 · 已睡 30 分钟", ShuilemeWidgetDisplay.statusLine(s, later, zone))
+    }
+
+    @Test
+    fun `睡眠状态显示 - 偏移 -2h 刚入睡为 0 分钟 真实 30 分钟仍为 30 分钟`() {
+        val s = sleepingState(startMs = now, offset = -120)
+        assertEquals("睡眠中 · 已睡 0 分钟", ShuilemeWidgetDisplay.statusLine(s, now, zone))
+        val later = now + 30 * 60_000L
+        assertEquals("睡眠中 · 已睡 30 分钟", ShuilemeWidgetDisplay.statusLine(s, later, zone))
+    }
+
+    @Test
+    fun `睡眠状态显示 - 跨午夜虚拟时间 时长仍按真实经过`() {
+        val start = Instant.parse("2026-08-21T23:50:00Z").toEpochMilli()
+        val s = sleepingState(startMs = start, offset = 120)
+        val nextDay = Instant.parse("2026-08-22T00:20:00Z").toEpochMilli()
+        assertEquals("睡眠中 · 已睡 30 分钟", ShuilemeWidgetDisplay.statusLine(s, nextDay, zone))
     }
 
     @Test

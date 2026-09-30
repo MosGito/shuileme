@@ -49,8 +49,8 @@ import com.sleepshift.shuileme.model.MoonLife
 import com.sleepshift.shuileme.model.MoonStage
 import com.sleepshift.shuileme.model.OnboardingState
 import com.sleepshift.shuileme.model.PersonalityCardGenerator
-import com.sleepshift.shuileme.model.SleepPersonalityEngine
 import com.sleepshift.shuileme.model.SleepPersonalityType
+import com.sleepshift.shuileme.model.personality.PersonalityColdStart
 import com.sleepshift.shuileme.reminder.ReminderPersonality
 import com.sleepshift.shuileme.ui.components.MoonStageLayout
 import com.sleepshift.shuileme.ui.components.NightMoon
@@ -84,8 +84,12 @@ fun ShuilemeOnboardingScreen(viewModel: ShuilemeViewModel) {
         if (wakeTimeMin > sleepTimeMin) wakeTimeMin - sleepTimeMin
         else (24 * 60 - sleepTimeMin) + wakeTimeMin
     }
-    val initialPersonality = remember(sleepTimeMin, wakeTimeMin, idealDurationMin) {
-        SleepPersonalityEngine.initialInclination(sleepTimeMin, wakeTimeMin, idealDurationMin)
+    // STEP 3（PHASE 6 / K-4）：冷启动人格基线 = V2.0.7 §11.2 Cold Start Domain，
+    // 基于用户当前真实作息（currentSleepTime/currentWakeTime），不再调用旧
+    // SleepPersonalityEngine.initialInclination。目标作息只参与理想时长展示，不决定初步人格。
+    val initialPersonality = remember(currentSleepTimeMin, currentWakeTimeMin) {
+        PersonalityColdStart.classify(currentSleepTimeMin, currentWakeTimeMin)
+            ?.let { PersonalityResultAdapter.legacyType(it) }
     }
 
     NightSurface(

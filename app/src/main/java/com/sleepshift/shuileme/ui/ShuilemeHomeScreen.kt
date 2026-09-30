@@ -92,6 +92,7 @@ import com.sleepshift.shuileme.model.PersonaBubblePhysics
 import com.sleepshift.shuileme.model.PersonalityCardGenerator
 import com.sleepshift.shuileme.ui.components.NightMoon
 import com.sleepshift.shuileme.ui.components.SleepGoalEditor
+import com.sleepshift.shuileme.model.realSleepElapsedMin
 import com.sleepshift.shuileme.model.ResidentEngine
 import com.sleepshift.shuileme.model.ShuilemeTypography
 import com.sleepshift.shuileme.model.SleepGestureState
@@ -781,8 +782,8 @@ private fun sleepProgressMoon(progress: Double): String {
 private fun statusCopy(state: ShuilemeState, nowMs: Long, virtualMs: Long): String {
     if (state.isSleeping) {
         val start = state.sleepStartAtMs ?: return "嘘…月亮在数羊"
-        val virtualElapsedMin = (nowMs - start) / 60_000L + state.currentOffsetMin
-        return "嘘，你已经睡了 ${formatElapsed(virtualElapsedMin)} 啦"
+        val elapsedMin = realSleepElapsedMin(start, nowMs)
+        return "嘘，你已经睡了 ${formatElapsed(elapsedMin)} 啦"
     }
     return when {
         state.moonProgress.fullMoonRewardPending -> "🌝 月亮很满意！连续 5 晚达成满月"

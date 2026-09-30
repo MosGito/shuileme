@@ -15,9 +15,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.sleepshift.shuileme.model.SleepPersonalityEngine
-import com.sleepshift.shuileme.model.SleepPersonalityType
 import com.sleepshift.shuileme.model.PersonalityCardGenerator
+import com.sleepshift.shuileme.model.personality.PersonalityColdStart
+import com.sleepshift.shuileme.ui.PersonalityResultAdapter
 import com.sleepshift.shuileme.ui.ShuilemeNight
 
 /**
@@ -97,9 +97,16 @@ fun SleepGoalEditor(
 
     if (showInitialInclination) {
         Spacer(Modifier.height(6.dp))
-        val inclination = SleepPersonalityEngine.initialInclination(targetSleepTimeMin, targetWakeTimeMin, idealDuration)
+        // STEP 3（PHASE 6 / K-4）：初步倾向 = V2.0.7 §11.2 Cold Start Domain，
+        // 基于「当前真实作息」而非目标作息；不再调用旧 initialInclination。
+        val inclination = PersonalityColdStart.classify(currentSleepTimeMin, currentWakeTimeMin)
+            ?.let { PersonalityResultAdapter.legacyType(it) }
         Text(
-            "初步倾向：${PersonalityCardGenerator.personalityPairEmoji(inclination)} ${inclination.displayName.removeSuffix("型")}型（低置信度）",
+            if (inclination != null) {
+                "初步倾向：${PersonalityCardGenerator.personalityPairEmoji(inclination)} ${inclination.displayName.removeSuffix("型")}型（低置信度）"
+            } else {
+                "初步倾向：🌙 月亮正在认识你（低置信度）"
+            },
             fontSize = 22.sp,
             color = ShuilemeNight.Accent,
         )

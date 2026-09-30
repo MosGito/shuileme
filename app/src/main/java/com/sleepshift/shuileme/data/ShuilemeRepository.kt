@@ -212,6 +212,9 @@ class ShuilemeRepository(private val context: Context) {
                 selectedPersonality = ReminderPersonality.entries.getOrElse(p[Keys.ONBOARDING_PERSONALITY] ?: 0) { ReminderPersonality.MOON },
                 targetSleepTime = p[Keys.ONBOARDING_TARGET_TIME] ?: OnboardingState.DEFAULT_TARGET_SLEEP_TIME_MIN,
                 targetWakeTime = p[Keys.ONBOARDING_WAKE_TIME] ?: OnboardingState.DEFAULT_TARGET_WAKE_TIME_MIN,
+                // STEP 3：冷启动人格基线 = 当前真实作息，必须从 DataStore 恢复，不能使用固定默认值
+                currentSleepTime = p[Keys.CURRENT_SLEEP_TIME_MIN] ?: OnboardingState.DEFAULT_CURRENT_SLEEP_TIME_MIN,
+                currentWakeTime = p[Keys.CURRENT_WAKE_TIME_MIN] ?: OnboardingState.DEFAULT_CURRENT_WAKE_TIME_MIN,
                 virtualClockTutorialDone = p[Keys.ONBOARDING_TUTORIAL_DONE] ?: false,
                 initialPersonality = (p[Keys.ONBOARDING_INITIAL_PERSONALITY] ?: -1)
                     .takeIf { it >= 0 }

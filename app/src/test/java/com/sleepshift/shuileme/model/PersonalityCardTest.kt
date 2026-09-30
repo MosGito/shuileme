@@ -41,6 +41,19 @@ class PersonalityCardTest {
     }
 
     @Test
+    fun `冷启动卡片 - 使用 current 作息派生人格 与 target 派生不同`() {
+        // 与 PersonalityCardActivity 冷启动路径一致：generateInitial(initial, currentSleep, currentWake)
+        val currentType = SleepPersonalityEngine.initialInclination(2 * 60, 12 * 60, 8 * 60) // NIGHT_OWL
+        val targetType = SleepPersonalityEngine.initialInclination(23 * 60, 7 * 60, 8 * 60)  // OTTER
+        assertTrue("current 与 target 派生人格应不同", currentType != targetType)
+
+        val model = PersonalityCardGenerator.generateInitial(currentType, 2 * 60, 12 * 60)
+        assertEquals(SleepPersonalityType.NIGHT_OWL, model.personalityType)
+        assertEquals("02:00", model.averageSleepTime)
+        assertEquals("12:00", model.averageWakeTime)
+    }
+
+    @Test
     fun `刚好5晚即解锁`() {
         val sessions = List(5) { SleepSession(at(23, 0), at(23, 0) + 8 * 3_600_000L) }
         val personality = SleepPersonalityEngine.compute(PersonalityInput(sessions = sessions))

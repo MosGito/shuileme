@@ -2,7 +2,12 @@ package com.sleepshift.shuileme.model
 
 import java.time.Instant
 import java.time.ZoneId
+import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
 import kotlin.math.min
+import kotlin.math.roundToInt
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
@@ -74,6 +79,55 @@ object SleepPersonalityEngine {
 
     const val MIN_SESSIONS = 5
 
+    /** 一天的分钟数 */
+    const val MINUTES_PER_DAY = 1440
+
+    /** 环形合成向量长度阈值：低于该值认为样本在圆周上近似均匀分布，环形平均无统计意义 */
+    private const val DEGENERATE_EPSILON = 1e-6
+
+    /**
+     * 一天中分钟数（0..1439）的环形平均（circular mean）。
+     *
+     * 数学：theta = 2π * minute / 1440，对 sin/cos 分别取平均，
+     * angle = atan2(sinSum, cosSum)（负角 +2π），再换算回 0..1439 分钟。
+     *
+     * 解决普通算术平均的跨午夜错误：23:50(1430) 与 00:10(10)
+     * 的算术平均是 12:00(720)，而环形平均是 00:00(0)。
+     *
+     * 退化情况：空列表，或样本近似均匀分布（合成向量长度 ≈ 0，如 0 与 720 相对）
+     * 时返回 null——此时任何单一"平均时间"都没有统计意义，
+     * 宁可不给时间，也不编造一个看似合理的时间。
+     *
+     * 舍入：roundToInt 后对 1440 取模，保证结果恒在 0..1439。
+     */
+    internal fun circularMeanMinutes(minutes: List<Int>): Int? {
+        if (minutes.isEmpty()) return null
+        var sinSum = 0.0
+        var cosSum = 0.0
+        for (m in minutes) {
+            val theta = 2.0 * Math.PI * m / MINUTES_PER_DAY
+            sinSum += sin(theta)
+            cosSum += cos(theta)
+        }
+        sinSum /= minutes.size
+        cosSum /= minutes.size
+        val resultant = sqrt(sinSum * sinSum + cosSum * cosSum)
+        if (resultant < DEGENERATE_EPSILON) return null
+        var angle = atan2(sinSum, cosSum)
+        if (angle < 0.0) angle += 2.0 * Math.PI
+        val result = (angle / (2.0 * Math.PI) * MINUTES_PER_DAY).roundToInt()
+        return ((result % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY
+    }
+
+    /**
+     * 两个分钟数（0..1439）的环形距离，结果范围 0..720。
+     * 23:50(1430) 与 00:10(10) 的普通差值是 1420，环形距离是 20。
+     */
+    internal fun circularDistance(a: Int, b: Int): Int {
+        val diff = abs(a - b)
+        return min(diff, MINUTES_PER_DAY - diff)
+    }
+
     fun compute(input: PersonalityInput): SleepPersonalityState {
         val sessions = input.sessions
         if (sessions.size < MIN_SESSIONS) {
@@ -128,8 +182,9 @@ object SleepPersonalityEngine {
         val wakes = sessions.mapNotNull { it.wakeAtMs?.let { w -> minutesOfDay(w) } }
         val durations = sessions.mapNotNull { it.durationMin }
         return PersonalityMetrics(
-            avgSleepTimeMin = if (starts.isNotEmpty()) starts.average().toInt() else null,
-            avgWakeTimeMin = if (wakes.isNotEmpty()) wakes.average().toInt() else null,
+            avgSleepTimeMin = circularMeanMinutes(starts),
+            avgWakeTimeMin = circularMeanMinutes(wakes),
+            // duration 不是环形变量（时长没有"绕圈"语义），继续使用普通算术平均
             avgDurationMin = if (durations.isNotEmpty()) durations.average().toLong() else null,
             regularityScore = regularityOf(starts),
         )
@@ -167,10 +222,16 @@ object SleepPersonalityEngine {
 
     private fun regularityOf(startMinutes: List<Int>): Double {
         if (startMinutes.size < 2) return 0.0
-        val mean = startMinutes.average()
-        val variance = startMinutes.map { (it - mean) * (it - mean) }.average()
-        val stddev = sqrt(variance)
-        return (1.0 - min(1.0, stddev / 120.0)).coerceIn(0.0, 1.0)
+        val mean = circularMeanMinutes(startMinutes) ?: return 0.0
+        // 环形标准差：每个样本到环形均值的 circularDistance 的均方根，
+        // 与旧公式（普通 stddev / 120 归一化）保持同一尺度与语义，
+        // 仅修复"跨午夜普通差值被放大"的数学错误（23:50 与 00:10 只差 20 分钟）。
+        val variance = startMinutes.map { d ->
+            val diff = circularDistance(d, mean).toDouble()
+            diff * diff
+        }.average()
+        val circularStdDev = sqrt(variance)
+        return (1.0 - min(1.0, circularStdDev / 120.0)).coerceIn(0.0, 1.0)
     }
 
     private fun minutesOfDay(ms: Long): Int {

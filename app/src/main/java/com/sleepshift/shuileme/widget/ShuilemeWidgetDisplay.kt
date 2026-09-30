@@ -2,6 +2,7 @@ package com.sleepshift.shuileme.widget
 
 import com.sleepshift.shuileme.data.ShuilemeState
 import com.sleepshift.shuileme.engine.VirtualClockEngine
+import com.sleepshift.shuileme.model.realSleepElapsedMin
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -40,8 +41,8 @@ object ShuilemeWidgetDisplay {
     fun statusLine(state: ShuilemeState, nowMs: Long, zone: ZoneId = ZoneId.systemDefault()): String {
         if (state.isSleeping) {
             val start = state.sleepStartAtMs ?: return "睡眠中…"
-            val virtualElapsedMin = (nowMs - start) / 60_000L + state.currentOffsetMin
-            return "睡眠中 · 已睡 ${formatElapsed(virtualElapsedMin)}"
+            val elapsedMin = realSleepElapsedMin(start, nowMs)
+            return "睡眠中 · 已睡 ${formatElapsed(elapsedMin)}"
         }
         return when {
             state.moonProgress.fullMoonRewardPending -> "🌝 满月达成！"

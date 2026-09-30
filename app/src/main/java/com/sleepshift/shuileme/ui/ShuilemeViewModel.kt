@@ -10,12 +10,11 @@ import com.sleepshift.shuileme.engine.OffsetMode
 import com.sleepshift.shuileme.engine.VirtualClockEngine
 import com.sleepshift.shuileme.model.MorningDetectiveReport
 import com.sleepshift.shuileme.model.OnboardingState
-import com.sleepshift.shuileme.model.PersonalityInput
 import com.sleepshift.shuileme.model.ResidentTalkSystem
 import com.sleepshift.shuileme.model.SleepDetective
-import com.sleepshift.shuileme.model.SleepPersonalityEngine
 import com.sleepshift.shuileme.model.SleepPersonalityState
-import com.sleepshift.shuileme.model.SleepSession
+import com.sleepshift.shuileme.model.personality.PersonalityMatcher
+import com.sleepshift.shuileme.model.personality.SleepBehaviorProfile
 import com.sleepshift.shuileme.reminder.ReminderPersonality
 import com.sleepshift.shuileme.reminder.SleepCapsule
 import com.sleepshift.shuileme.reminder.ShuilemeReminderNotifier
@@ -63,19 +62,18 @@ class ShuilemeViewModel(
         }
     }
 
-    /** SL-6 睡眠人格状态（由 DataStore 会话数据实时计算，纯规则无 AI） */
+    /**
+     * SL-6 睡眠人格状态（PHASE 6：正式判定唯一来源 = V2.0.7 Personality Domain）。
+     *
+     * SleepSession[] → SleepBehaviorProfile.from → PersonalityMatcher.classify
+     * → PersonalityResult → PersonalityResultAdapter 投影为旧展示结构。
+     * 不再调用旧 SleepPersonalityEngine.compute（K-1 关闭）。
+     */
     val personalityState: StateFlow<SleepPersonalityState> = state
         .map { s ->
-            SleepPersonalityEngine.compute(
-                PersonalityInput(
-                    sessions = s.sessions,
-                    moonLife = s.moonLife,
-                    streakDays = s.streakDays,
-                    sleepCount = s.sleepCount,
-                    // SL-9：实际入睡 vs 目标入睡 偏差 → 影响规律度/置信度
-                    sleepTargetDeviationMin = targetDeviation(s.sessions, s.targetSleepTimeMin),
-                )
-            )
+            val profile = SleepBehaviorProfile.from(s.sessions)
+            val result = PersonalityMatcher.classify(profile, s.targetSleepTimeMin)
+            PersonalityResultAdapter.legacyState(result, profile)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SleepPersonalityState())
 
@@ -119,18 +117,6 @@ class ShuilemeViewModel(
             _talkText.value = ResidentTalkSystem.pickTalk(type, scenario, s.sleepCount)
             repository.incrementTalk(today)
         }
-    }
-
-    /** SL-9：实际入睡 vs 目标入睡 平均偏差（分钟，含跨午夜取最小环） */
-    private fun targetDeviation(sessions: List<SleepSession>, targetMin: Int): Long? {
-        if (sessions.isEmpty()) return null
-        val devs = sessions.map { s ->
-            val zdt = Instant.ofEpochMilli(s.sleepStartAtMs).atZone(ZoneId.systemDefault())
-            val m = zdt.hour * 60 + zdt.minute
-            val raw = kotlin.math.abs(m - targetMin)
-            minOf(raw, 1440 - raw)
-        }
-        return devs.average().toLong()
     }
 
     private fun todayEpochDay(nowMs: Long): Long =

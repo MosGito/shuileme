@@ -45,8 +45,24 @@
 | 2026-08-19 | 环境搭建 + v2 重设计 + 阶段 1~4 | 可配置时区偏移系统（数据模型 / UI / 持久化 / 调度 / Receiver / 整小时约束） | `4e186b7` ~ `edd6b0b` |
 | 2026-08-20~21【日期待确认】 | 阶段 7 实验 | WRITE_SETTINGS 时区通道实验（已废弃移除，Manifest 残留注释与权限声明） | 未提交（checkpoint #35 清理） |
 | 2026-08-19~21 | 检修轨道 Phase 1-10 | 模拟器环境排障（与产品开发无关，仅外层记录） | 无仓库提交 |
+| 2026-08-27 | PHASE 0 架构规范化 + PHASE 1~3 人格实现 | 文档树分层；V2.0.7 特征/定义/Membership 层 | 未提交 |
 
 ---
+
+## 零、2026-08-27｜PHASE 0 架构规范化 + 人格 PHASE 1~3（跨系统）
+
+- **目标**：把全项目架构审计正式化为项目级架构规范与文档边界；完成 V2.0.7 人格系统特征/定义/Membership 三层实现。
+- **完成**：
+  - 文档树分层：`docs/architecture|personality|sleep|bubble|moon|clock|social|reminder|legacy|project`；
+  - V2.0.7 规范迁移至 `docs/personality/SLEEP_PERSONALITY_SYSTEM_V2.md`（字节一致，SHA-256 不变，FROZEN）；
+  - `SYSTEM_MAP.md`（系统边界/依赖矩阵/K-1~K-10 债务/迁移队列）与 `DECISIONS.md`（ADR-001~011 + 回执格式标准）；
+  - 各系统 `SPEC.md` + `CHANGES.md`；`legacy/FROZEN.md`；
+  - 项目日志/状态迁入 `docs/project/`（历史保留）；
+  - PHASE 1（特征层）、PHASE 2（定义层）、PHASE 3（Membership 层）实现 + 单测（全量 210 通过）。
+- **架构决策**：ADR-001~011（Personality 独立化、V2.0.7 唯一规范、Gate 不参与 argmax、Result 唯一契约、UI 禁调算法、Social 禁自算、Domain 禁依赖 UI、Legacy 冻结、Repository 按域收敛、SPEC/CHANGES 分离、V3/V4 内部替换）。
+- **遗留债务登记**：K-1~K-10（详见 `docs/architecture/SYSTEM_MAP.md` §8），本阶段不修复。
+- **下一步**：PHASE 4（PersonalityMatcher + PersonalityResult + Confidence）。
+- **来源**：本条目为项目级记录；系统级细节见各 `docs/*/CHANGES.md`。
 
 ## 一、2026-08-22 01:39｜0.3.25 Alpha 基线发布（SL-9.6 ~ SL-9.10）
 

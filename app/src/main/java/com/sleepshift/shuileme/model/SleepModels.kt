@@ -19,6 +19,19 @@ data class SleepSession(
 }
 
 /**
+ * 真实经过的睡眠时长（分钟）。
+ *
+ * - 严格基于真实时间基准（[sleepStartAtMs] 是真实入睡时刻），与虚拟时间偏移完全无关；
+ * - 刚入睡 → 0；真实经过 30 分钟 → 30（无论偏移是多少）；
+ * - 钳制 ≥ 0：防止系统时钟回拨等异常产生负数。
+ *
+ * 供「已睡多久 / 睡眠状态持续时间」展示使用；
+ * 统计 / 人格 / 月亮成长仍走 [SleepSession.durationMin]。
+ */
+fun realSleepElapsedMin(sleepStartAtMs: Long, nowMs: Long): Long =
+    ((nowMs - sleepStartAtMs).coerceAtLeast(0L)) / 60_000L
+
+/**
  * SL-6 睡眠人格分析数据结构（仅存储，不生成人格）。
  *
  * 未来人格方向：
